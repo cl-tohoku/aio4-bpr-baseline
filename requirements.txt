@@ -1,0 +1,11 @@
+datasets
+faiss-cpu
+fastapi
+jsonargparse[signatures]
+lightning
+regex
+tensorboard
+torch
+tqdm
+transformers[ja]
+ujson
