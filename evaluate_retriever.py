@@ -100,6 +100,7 @@ def main(args: argparse.Namespace):
             if fo is not None:
                 output_example = {
                     "qid": example["qid"],
+                    "position": example["position"],
                     "question": example["question"],
                     "answers": example["answers"],
                     "passages": passages,

@@ -72,13 +72,15 @@ class BPRPipeline(LightningModule):
         )
         return dataloader
 
-    def _predict_collate_fn(self, examples: list[dict[str, Any]]) -> dict[str, list[str]]:
+    def _predict_collate_fn(self, examples: list[dict[str, Any]]) -> dict[str, list[str] | list[int]]:
         qids: list[str] = [example["qid"] for example in examples]
+        positions: list[int] = [example["position"] for example in examples]
         questions: list[str] = [example["question"] for example in examples]
-        return {"qids": qids, "questions": questions}
+        return {"qids": qids, "positions": positions, "questions": questions}
 
     def predict_step(self, batch: dict[str, list[str]], batch_idx: int) -> list[dict[str, str | int | float]]:
         qids: list[str] = batch["qids"]
+        positions: list[int] = batch["positions"]
         questions: list[str] = batch["questions"]
 
         predictions = self.predict_answers(
@@ -91,7 +93,10 @@ class BPRPipeline(LightningModule):
             reader_max_answer_length=self.hparams.predict_reader_max_answer_length,
         )
 
-        outputs = [{"qid": qid, "prediction": prediction["answers"][0]} for qid, prediction in zip(qids, predictions)]
+        outputs = [
+            {"qid": qid, "position": position, "prediction": prediction["answers"][0]}
+            for qid, position, prediction in zip(qids, positions, predictions)
+        ]
         return outputs
 
     def predict_answers(

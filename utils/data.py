@@ -7,6 +7,7 @@ from transformers import BatchEncoding
 
 DATASET_FEATURES = Features({
     "qid": Value(dtype="string"),
+    "position": Value(dtype="int64"),
     "question": Value(dtype="string"),
     "answers": [Value(dtype="string")],
     "passages": [

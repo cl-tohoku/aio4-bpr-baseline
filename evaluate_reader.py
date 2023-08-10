@@ -4,6 +4,8 @@ import re
 import string
 import unicodedata
 
+from tqdm import tqdm
+
 from utils.data import open_file
 
 
@@ -36,7 +38,7 @@ def main(args: argparse.Namespace):
         fo = None
 
     with open_file(args.reader_input_file) as fi, open_file(args.reader_prediction_file) as fp:
-        for fi_line, fp_line in zip(fi, fp):
+        for fi_line, fp_line in tqdm(zip(fi, fp)):
             example = json.loads(fi_line)
             prediction = json.loads(fp_line)
 
@@ -51,6 +53,7 @@ def main(args: argparse.Namespace):
             if fo is not None:
                 output_example = {
                     "qid": example["qid"],
+                    "position": example["position"],
                     "question": example["question"],
                     "answers": example["answers"],
                     "pred_answers": prediction["answers"],

@@ -11,28 +11,31 @@ def main(args: argparse.Namespace):
         for line in tqdm(f):
             example = json.loads(line)
 
-            for i in range(args.num_question_splits):
-                qid = f'{example["qid"]}-{i + 1}/{args.num_question_splits}'
+            qid = example["qid"]
 
+            questions: list[str] = []
+            for i in range(args.num_question_splits):
                 question_length = int(len(example["question"]) * (i + 1) / args.num_question_splits)
                 question = example["question"][:question_length]
+                questions.append(question)
 
-                answers = example["answers"]
+            answers = example["answers"]
+            passages = [
+                {
+                    "pid": passage["passage_id"],
+                    "title": passage["title"],
+                    "text": passage["text"],
+                    "score": None,
+                }
+                for passage in example["passages"]
+            ]
+            positive_passage_idxs = example["positive_passage_indices"]
+            negative_passage_idxs = example["negative_passage_indices"]
 
-                passages = [
-                    {
-                        "pid": passage["passage_id"],
-                        "title": passage["title"],
-                        "text": passage["text"],
-                        "score": None,
-                    }
-                    for passage in example["passages"]
-                ]
-                positive_passage_idxs = example["positive_passage_indices"]
-                negative_passage_idxs = example["negative_passage_indices"]
-
+            for question in questions:
                 output_example = {
                     "qid": qid,
+                    "position": len(question),
                     "question": question,
                     "answers": answers,
                     "passages": passages,

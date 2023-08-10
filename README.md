@@ -169,7 +169,7 @@ python gather_json_predictions.py \
 
 ```sh
 docker build -t aio4-bpr-baseline .
-docker run --rm -d -p 8000:8000 aio4-bpr-baseline
+docker run --rm -p 8000:8000 aio4-bpr-baseline
 ```
 
 ```sh
