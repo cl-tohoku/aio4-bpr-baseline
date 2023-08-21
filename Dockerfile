@@ -10,11 +10,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip install --no-cache-dir \
         datasets \
         faiss-cpu \
-        fastapi \
         lightning \
         torch \
-        transformers[ja] \
-        ujson
+        transformers[ja]
 
 # Download transformers models in advance
 ARG TRANSFORMERS_BASE_MODEL_NAME="cl-tohoku/bert-base-japanese-v3"
@@ -31,8 +29,8 @@ COPY work/data/aio_02/passages/jawiki-20220404-c400-large.jsonl.gz /work/passage
 # Copy codes
 COPY models /code/models
 COPY utils /code/utils
-COPY api.py /code
+COPY prediction_loop.py /code
 
 # Start the web API
 WORKDIR /code
-CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["python", "prediction_loop.py"]

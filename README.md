@@ -165,14 +165,15 @@ python gather_json_predictions.py \
   --output_file work/model/aio_02/pipeline/aio_02_dev/lightning_logs/version_0/prediction.jsonl.gz
 ```
 
-### Building and Running the Web API
+### Building and Running the Docker Container for Inference
 
 ```sh
+mkdir input output
+
 docker build -t aio4-bpr-baseline .
-docker run --rm -p 8000:8000 aio4-bpr-baseline
-```
+docker run --rm -v $(realpath input):/input -v $(realpath output):/output aio4-bpr-baseline
 
-```sh
-curl -G "http://localhost:8000/answer" --data-urlencode "q=滋賀県の面積のおよそ6分の1を占める、日本で一番広い湖はどこ？"
-# {"answer":"琵琶 湖"}
+echo '{"qid": "AIO04-0005", "position": 36, "question": "味がまずい魚のことを、猫でさえ見向きもしないということから俗に何という?"}' > input/example.json
+cat output/example.json
+# {"qid": "AIO04-0005", "position": 36, "prediction": "猫またぎ"}
 ```
