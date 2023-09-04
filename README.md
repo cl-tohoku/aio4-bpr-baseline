@@ -92,28 +92,28 @@ python evaluate_retriever.py \
   --passage_dataset_file work/data/aio_02/passages/jawiki-20220404-c400-large.jsonl.gz \
   --match_type nfkc \
   --output_file work/data/aio_02/reader/aio_02_train.jsonl.gz
-# Recall@1: 0.7638 (17059/22335)
-# Recall@2: 0.8446 (18864/22335)
-# Recall@5: 0.8878 (19828/22335)
-# Recall@10: 0.9024 (20154/22335)
-# Recall@20: 0.9112 (20351/22335)
-# Recall@50: 0.9227 (20608/22335)
+# Recall@1: 0.7597 (16968/22335)
+# Recall@2: 0.8409 (18782/22335)
+# Recall@5: 0.8869 (19809/22335)
+# Recall@10: 0.9019 (20143/22335)
+# Recall@20: 0.9123 (20377/22335)
+# Recall@50: 0.9233 (20623/22335)
 # Recall@100: 0.9311 (20797/22335)
-# MRR@10: 0.8199
+# MRR@10: 0.8170
 python evaluate_retriever.py \
   --retriever_input_file work/data/aio_02/retriever/aio_02_dev.jsonl.gz \
   --retriever_prediction_file work/model/aio_02/retrieved_passages/aio_02_dev/lightning_logs/version_0/prediction.jsonl.gz \
   --passage_dataset_file work/data/aio_02/passages/jawiki-20220404-c400-large.jsonl.gz \
   --match_type nfkc \
   --output_file work/data/aio_02/reader/aio_02_dev.jsonl.gz
-# Recall@1: 0.5740 (574/1000)
-# Recall@2: 0.6800 (680/1000)
-# Recall@5: 0.7570 (757/1000)
-# Recall@10: 0.8030 (803/1000)
-# Recall@20: 0.8410 (841/1000)
-# Recall@50: 0.8710 (871/1000)
-# Recall@100: 0.8890 (889/1000)
-# MRR@10: 0.6587
+# Recall@1: 0.5500 (550/1000)
+# Recall@2: 0.6720 (672/1000)
+# Recall@5: 0.7750 (775/1000)
+# Recall@10: 0.8220 (822/1000)
+# Recall@20: 0.8500 (850/1000)
+# Recall@50: 0.8740 (874/1000)
+# Recall@100: 0.9010 (901/1000)
+# MRR@10: 0.6495
 ```
 
 ### Reader Training
@@ -156,13 +156,13 @@ python cli.py predict \
   --config configs/pipeline.yaml \
   --model.retriever_ckpt_file work/model/aio_02/retriever/lightning_logs/version_0/checkpoints/last.ckpt \
   --model.reader_ckpt_file work/model/aio_02/reader/lightning_logs/version_0/checkpoints/best.ckpt \
-  --model.predict_dataset_file work/data/aio_02/retriever/aio_02_dev.jsonl.gz \
+  --model.predict_dataset_file data/aio_04_dev_unlabeled_v1.0.jsonl \
   --model.passage_faiss_index_file work/data/aio_02/passage_index/jawiki-20220404-c400-large.faiss \
   --model.passage_dataset_file work/data/aio_02/passages/jawiki-20220404-c400-large.jsonl.gz \
-  --trainer.default_root_dir work/model/aio_02/pipeline/aio_02_dev
+  --trainer.default_root_dir work/model/aio_02/pipeline/aio_04_dev
 python gather_json_predictions.py \
-  --predictions_dir work/model/aio_02/pipeline/aio_02_dev/lightning_logs/version_0/predictions \
-  --output_file work/model/aio_02/pipeline/aio_02_dev/lightning_logs/version_0/prediction.jsonl.gz
+  --predictions_dir work/model/aio_02/pipeline/aio_04_dev/lightning_logs/version_0/predictions \
+  --output_file work/model/aio_02/pipeline/aio_04_dev/lightning_logs/version_0/prediction.jsonl.gz
 ```
 
 ### Building and Running the Docker Container for Inference
