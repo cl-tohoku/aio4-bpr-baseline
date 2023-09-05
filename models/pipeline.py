@@ -25,6 +25,7 @@ class BPRPipeline(LightningModule):
         predict_reader_max_passages_to_read: int = 1,
         predict_reader_max_answer_spans: int = 1,
         predict_reader_max_answer_length: int = 10,
+        predict_answer_score_threshold: float = 0.0,
         datasets_num_proc: int | None = None,
         dataloader_num_workers: int = 0,
     ):
@@ -93,10 +94,16 @@ class BPRPipeline(LightningModule):
             reader_max_answer_length=self.hparams.predict_reader_max_answer_length,
         )
 
-        outputs = [
-            {"qid": qid, "position": position, "prediction": prediction["answers"][0]}
-            for qid, position, prediction in zip(qids, positions, predictions)
-        ]
+        outputs = []
+        for qid, position, prediction in zip(qids, positions, predictions):
+            score = prediction["scores"][0]
+            if score >= self.hparams.predict_answer_score_threshold:
+                pred_answer = prediction["answers"][0]
+            else:
+                pred_answer = None
+
+            outputs.append({"qid": qid, "position": position, "prediction": pred_answer, "score": score})
+
         return outputs
 
     def predict_answers(
