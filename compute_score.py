@@ -4,7 +4,10 @@ import re
 import unicodedata
 
 
-def normalize_answer(text: str) -> str:
+def normalize_answer(text: str | None) -> str | None:
+    if text is None:
+        return None
+
     # substitute some symbols that will not be replaced by unicode normalization
     text = text.replace("～", "〜")
 
@@ -29,10 +32,15 @@ def normalize_answer(text: str) -> str:
     return text
 
 
-def main(args: argparse.Namespace):
-    all_questions = {}  # qid -> question
-    all_gold_answers = {}  # qid -> answers
-    with open(args.gold_file) as f:
+def compute_scores(
+    gold_file: str,
+    prediction_file: str,
+    limit_num_wrong_answers: int | None = None,
+) -> dict[str, float]:
+    # load the gold file
+    all_questions: dict[str, str] = {}  # qid -> question
+    all_gold_answers: dict[str, list[str]] = {}  # qid -> answers
+    with open(gold_file) as f:
         for line in f:
             gold_item = json.loads(line)
             qid = gold_item["qid"]
@@ -43,11 +51,11 @@ def main(args: argparse.Namespace):
             all_gold_answers[qid] = [normalize_answer(answer) for answer in gold_answers]
 
     num_questions = len(all_questions)
-    print("num_questions:", num_questions)
     assert len(all_gold_answers) == num_questions
 
-    all_pred_answers = {}  # qid -> position -> answer
-    with open(args.prediction_file) as f:
+    # load the prediction file
+    all_pred_answers: dict[str, dict[int, str]] = {}  # qid -> position -> answer
+    with open(prediction_file) as f:
         for line in f:
             pred_item = json.loads(line)
             qid = pred_item["qid"]
@@ -55,50 +63,74 @@ def main(args: argparse.Namespace):
             pred_answer = pred_item["prediction"]
 
             if qid not in all_pred_answers:
-                all_pred_answers[qid] = {}
+                all_pred_answers[qid]: dict[int, str] = {}
 
             all_pred_answers[qid][position] = normalize_answer(pred_answer)
 
     assert len(all_pred_answers) == num_questions
 
-    all_correct_positions = {}  # qid -> positions
-    for qid, gold_answers in all_gold_answers.items():
-        all_correct_positions[qid] = []
-
-        pred_answers = all_pred_answers[qid]  # position -> pred_answer
-        for position, pred_answer in sorted(pred_answers.items(), key=lambda x: x[0]):
-            if pred_answer in gold_answers:
-                all_correct_positions[qid].append(position)
-
-    assert len(all_correct_positions) == num_questions
-
+    # calculate scores
     accuracy_score = 0.0
     position_score = 0.0
+    num_correct = 0
+    num_missed = 0
+    num_failed = 0
+    for qid, question in all_questions.items():
+        pred_answers = all_pred_answers[qid]  # position -> pred_answer
+        gold_answers = all_gold_answers[qid]
 
-    for qid, positions in all_correct_positions.items():
-        if len(positions) == 0:
+        correct_position: int | None = None  # the earliest position of the correct predictions
+        wrong_answers = set()
+
+        for position, pred_answer in sorted(pred_answers.items(), key=lambda x: x[0]):
+            if pred_answer in gold_answers:
+                correct_position = position
+                break
+            elif pred_answer is not None:
+                wrong_answers.add(pred_answer)
+
+        if correct_position is None:
+            num_missed += 1
             continue
 
-        best_position = positions[0]
-        question_length = len(all_questions[qid])
+        if limit_num_wrong_answers is not None and len(wrong_answers) > limit_num_wrong_answers:
+            num_failed += 1
+            continue
 
+        num_correct += 1
         accuracy_score += 1.0
-        position_score += (1.0 - best_position / question_length)
+        position_score += (1.0 - correct_position / len(question))
 
-    accuracy = accuracy_score / num_questions
+    accuracy = num_correct / num_questions
     total_score = accuracy_score + position_score
 
-    print(f"accuracy: {accuracy:.1%}")
-    print(f"accuracy_score: {accuracy_score:.3f}")
-    print(f"position_score: {position_score:.3f}")
-    print(f"total_score: {total_score:.3f}")
+    scores = {
+        "num_questions": num_questions,
+        "num_correct": num_correct,
+        "num_missed": num_missed,
+        "num_failed": num_failed,
+        "accuracy": accuracy,
+        "accuracy_score": accuracy_score,
+        "position_score": position_score,
+        "total_score": total_score,
+    }
+    return scores
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-
     parser.add_argument("--prediction_file", type=str, required=True)
     parser.add_argument("--gold_file", type=str, required=True)
+    parser.add_argument("--limit_num_wrong_answers", type=int)
     args = parser.parse_args()
 
-    main(args)
+    scores = compute_scores(args.gold_file, args.prediction_file, limit_num_wrong_answers=args.limit_num_wrong_answers)
+
+    print("num_questions: {}".format(scores["num_questions"]))
+    print("num_correct: {}".format(scores["num_correct"]))
+    print("num_missed: {}".format(scores["num_missed"]))
+    print("num_failed: {}".format(scores["num_failed"]))
+    print("accuracy: {:.1%}".format(scores["accuracy"]))
+    print("accuracy_score: {:.3f}".format(scores["accuracy_score"]))
+    print("position_score: {:.3f}".format(scores["position_score"]))
+    print("total_score: {:.3f}".format(scores["total_score"]))
