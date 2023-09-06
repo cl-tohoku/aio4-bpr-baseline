@@ -159,10 +159,28 @@ python cli.py predict \
   --model.predict_dataset_file data/aio_04_dev_unlabeled_v1.0.jsonl \
   --model.passage_faiss_index_file work/data/aio_02/passage_index/jawiki-20220404-c400-large.faiss \
   --model.passage_dataset_file work/data/aio_02/passages/jawiki-20220404-c400-large.jsonl.gz \
+  --model.predict_answer_score_threshold 0.3 \
   --trainer.default_root_dir work/model/aio_02/pipeline/aio_04_dev
 python gather_json_predictions.py \
   --predictions_dir work/model/aio_02/pipeline/aio_04_dev/lightning_logs/version_0/predictions \
-  --output_file work/model/aio_02/pipeline/aio_04_dev/lightning_logs/version_0/prediction.jsonl.gz
+  --output_file work/model/aio_02/pipeline/aio_04_dev/lightning_logs/version_0/prediction.jsonl
+```
+
+### Compute Scores
+
+```sh
+python compute_score.py \
+  --prediction_file work/model/aio_02/pipeline/aio_04_dev/lightning_logs/version_0/prediction.jsonl \
+  --gold_file data/aio_04_dev_v1.0.jsonl \
+  --limit_num_wrong_answers 3
+# num_questions: 500
+# num_correct: 251
+# num_missed: 188
+# num_failed: 61
+# accuracy: 50.2%
+# accuracy_score: 251.000
+# position_score: 88.826
+# total_score: 339.826
 ```
 
 ### Building and Running the Docker Container for Inference
