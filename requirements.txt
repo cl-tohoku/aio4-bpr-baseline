@@ -1,9 +1,0 @@
-datasets
-faiss-cpu
-jsonargparse[signatures]
-lightning
-regex
-tensorboard
-torch
-tqdm
-transformers[ja]

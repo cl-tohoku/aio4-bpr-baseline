@@ -1,56 +1,44 @@
 import json
+import logging
 from pathlib import Path
 from time import sleep
 
-import torch
-
-from models.pipeline import BPRPipeline
+from aio4_bpr_baseline.models.pipeline_aio4.bpr.onnx_modules import PipelineOnnxModule
 
 
 INPUT_DIR = "/input"
 OUTPUT_DIR = "/output"
 
-RETRIEVER_CKPT_FILE = "/work/retriever.ckpt"
-READER_CKPT_FILE = "/work/reader.ckpt"
+QUESTION_ENCODER_ONNX_FILE = "/work/question_encoder.onnx"
+READER_ONNX_FILE = "/work/reader.onnx"
 PASSAGE_FAISS_INDEX_FILE = "/work/passages.faiss"
 PASSAGE_DATASET_FILE = "/work/passages.json.gz"
 
-ANSWER_SCORE_THRESHOLD = 0.1
+RETRIEVER_K = 10
+ANSWER_SCORE_THRESHOLD = 0.3
 
 
-@torch.inference_mode()
-def predict_answer(pipeline: BPRPipeline, question: str) -> str | None:
-    prediction = pipeline.predict_answers([question])[0]
-
-    answer = prediction["answers"][0]
-    score = prediction["scores"][0]
-
-    if score > ANSWER_SCORE_THRESHOLD:
-        return answer
-    else:
-        return None
+logging.basicConfig(level=logging.INFO, format="[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s")
+logger = logging.getLogger()
 
 
 def main():
-    print("Loading BPRPipeline")
+    logger.info("Loading PipelineOnnxModule")
 
-    pipeline = BPRPipeline(
-        retriever_ckpt_file=RETRIEVER_CKPT_FILE,
-        reader_ckpt_file=READER_CKPT_FILE,
-        passage_faiss_index_file=PASSAGE_FAISS_INDEX_FILE,
-        passage_dataset_file=PASSAGE_DATASET_FILE,
+    pipeline = PipelineOnnxModule(
+        QUESTION_ENCODER_ONNX_FILE,
+        READER_ONNX_FILE,
+        PASSAGE_FAISS_INDEX_FILE,
+        PASSAGE_DATASET_FILE,
+        question_encoder_base_model_name="cl-tohoku/bert-base-japanese-v3",
+        reader_base_model_name="cl-tohoku/bert-base-japanese-v3",
     )
-    pipeline.eval()
 
-    if torch.cuda.is_available():
-        pipeline.to("cuda")
-        print("Loaded BPRPipeline to GPU")
-    else:
-        print("Loaded BPRPipeline to CPU")
+    logger.info("Finished loading PipelineOnnxModule")
 
     while True:
         for input_file in Path(INPUT_DIR).iterdir():
-            print("Processing", input_file.name)
+            logger.info("Processing %s", input_file.name)
 
             input_item = json.load(open(input_file))
 
@@ -58,14 +46,16 @@ def main():
             position = input_item["position"]
             question = input_item["question"]
 
-            predicted_answer = predict_answer(pipeline, question)
+            prediction = pipeline.predict_answers(
+                [question], retriever_k=RETRIEVER_K, answer_score_threshold=ANSWER_SCORE_THRESHOLD
+            )[0]
 
-            output = {"qid": qid, "position": position, "prediction": predicted_answer}
+            output = {"qid": qid, "position": position, "prediction": prediction["pred_answer"]}
 
             output_file = Path(OUTPUT_DIR) / input_file.name
             json.dump(output, open(output_file, "w"), ensure_ascii=False)
 
-            print("Removing", input_file.name)
+            logger.info("Removing %s", input_file.name)
             input_file.unlink()
 
         sleep(1.0)

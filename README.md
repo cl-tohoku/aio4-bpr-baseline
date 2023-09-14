@@ -1,5 +1,18 @@
 # AIO4 BPR Baseline
 
+This is a baseline system for AIO4 competition utilizing [Binary Passage Retriever (BPR)](https://github.com/studio-ousia/bpr).
+
+BPR is an efficient passage retrieval model for a large collection of documents.
+BPR integrates a learning-to-hash technique into [Dense Passage Retriever (DPR)](https://github.com/facebookresearch/DPR) to represent the passage embeddings using compact binary codes rather than continuous vectors.
+It substantially reduces the memory size without a loss of accuracy when tested on several QA datasets (see [the BPR repository](https://github.com/studio-ousia/bpr) for more detail).
+
+## Installation
+
+```sh
+pip install -U pip setuptools wheel
+pip install -e '.[lightning,onnx]'
+```
+
 ## Example Usage
 
 **Note:** The following example is run on a server with 4 GPUs, each with at least 16 GB of memory.
@@ -17,110 +30,117 @@ wget https://github.com/cl-tohoku/quiz-datasets/releases/download/v1.0.1/passage
 
 ```sh
 mkdir -p work/data/aio_02/retriever
-python convert_retriever_dataset.py \
-  --input_dataset_file data/datasets.jawiki-20220404-c400-large.aio_02_train.jsonl.gz \
-  --output_dataset_file work/data/aio_02/retriever/aio_02_train.jsonl.gz
-python convert_retriever_dataset.py \
-  --input_dataset_file data/datasets.jawiki-20220404-c400-large.aio_02_dev.jsonl.gz \
-  --output_dataset_file work/data/aio_02/retriever/aio_02_dev.jsonl.gz
+python -m convert_retriever_dataset \
+  --input_file data/datasets.jawiki-20220404-c400-large.aio_02_train.jsonl.gz \
+  --output_file work/data/aio_02/retriever/aio_02_train.jsonl.gz
+python -m convert_retriever_dataset \
+  --input_file data/datasets.jawiki-20220404-c400-large.aio_02_dev.jsonl.gz \
+  --output_file work/data/aio_02/retriever/aio_02_dev.jsonl.gz
 
 mkdir -p work/data/aio_02/passages
-python convert_passage_dataset.py \
-  --passage_file data/passages.jawiki-20220404-c400-large.jsonl.gz \
-  --output_dataset_file work/data/aio_02/passages/jawiki-20220404-c400-large.jsonl.gz
+python -m convert_passage_dataset \
+  --input_file data/passages.jawiki-20220404-c400-large.jsonl.gz \
+  --output_file work/data/aio_02/passages/jawiki-20220404-c400-large.jsonl.gz
 ```
 
-### Retriever Training
+### BiEncoder Training
 
 ```sh
-python cli.py fit \
-  --config configs/retriever.yaml \
+python -m aio4_bpr_baseline.lightning_cli fit \
+  --config aio4_bpr_baseline/configs/retriever/bpr/biencoder.yaml \
   --model.train_dataset_file work/data/aio_02/retriever/aio_02_train.jsonl.gz \
   --model.val_dataset_file work/data/aio_02/retriever/aio_02_dev.jsonl.gz \
-  --trainer.default_root_dir work/model/aio_02/retriever
+  --trainer.default_root_dir work/model/aio_02/biencoder
 ```
 
 ### Embedder Prediction
 
 ```sh
-mkdir -p work/data/aio_02/passage_index
-python cli.py predict \
-  --config configs/embedder.yaml \
-  --model.retriever_ckpt_file work/model/aio_02/retriever/lightning_logs/version_0/checkpoints/last.ckpt \
+python -m aio4_bpr_baseline.lightning_cli predict \
+  --config aio4_bpr_baseline/configs/retriever/bpr/embedder.yaml \
+  --model.biencoder_ckpt_file work/model/aio_02/biencoder/lightning_logs/version_0/checkpoints/last.ckpt \
   --model.predict_dataset_file work/data/aio_02/passages/jawiki-20220404-c400-large.jsonl.gz \
-  --trainer.default_root_dir work/model/aio_02/embeddings/jawiki-20220404-c400-large
-python gather_numpy_predictions.py \
-  --predictions_dir work/model/aio_02/embeddings/jawiki-20220404-c400-large/lightning_logs/version_0/predictions \
-  --output_file work/model/aio_02/embeddings/jawiki-20220404-c400-large/lightning_logs/version_0/prediction.npy
-python build_passage_faiss_index.py \
-  --embedder_prediction_file work/model/aio_02/embeddings/jawiki-20220404-c400-large/lightning_logs/version_0/prediction.npy \
-  --output_file work/data/aio_02/passage_index/jawiki-20220404-c400-large.faiss
+  --trainer.default_root_dir work/model/aio_02/embedder
+python -m aio4_bpr_baseline.utils.gather_numpy_predictions \
+  --predictions_dir work/model/aio_02/embedder/lightning_logs/version_0/predictions \
+  --output_file work/model/aio_02/embedder/lightning_logs/version_0/prediction.npy
+python -m aio4_bpr_baseline.models.retriever.bpr.build_faiss_index \
+  --embeddings_file work/model/aio_02/embedder/lightning_logs/version_0/prediction.npy \
+  --output_file work/model/aio_02/embedder/lightning_logs/version_0/embedings.faiss
 ```
-
 
 ### Retriever Prediction
 
 ```sh
-python cli.py predict \
-  --config configs/retriever.yaml \
-  --ckpt_path work/model/aio_02/retriever/lightning_logs/version_0/checkpoints/last.ckpt \
+python -m aio4_bpr_baseline.lightning_cli predict \
+  --config aio4_bpr_baseline/configs/retriever/bpr/retriever.yaml \
+  --model.biencoder_ckpt_file work/model/aio_02/biencoder/lightning_logs/version_0/checkpoints/last.ckpt \
+  --model.passage_faiss_index_file work/model/aio_02/embedder/lightning_logs/version_0/embedings.faiss \
   --model.predict_dataset_file work/data/aio_02/retriever/aio_02_train.jsonl.gz \
-  --model.passage_faiss_index_file work/data/aio_02/passage_index/jawiki-20220404-c400-large.faiss \
-  --trainer.default_root_dir work/model/aio_02/retrieved_passages/aio_02_train
-python gather_json_predictions.py \
-  --predictions_dir work/model/aio_02/retrieved_passages/aio_02_train/lightning_logs/version_0/predictions \
-  --output_file work/model/aio_02/retrieved_passages/aio_02_train/lightning_logs/version_0/prediction.jsonl.gz
+  --trainer.default_root_dir work/model/aio_02/retriever/aio_02_train
+python -m aio4_bpr_baseline.utils.gather_json_predictions \
+  --predictions_dir work/model/aio_02/retriever/aio_02_train/lightning_logs/version_0/predictions \
+  --output_file work/model/aio_02/retriever/aio_02_train/lightning_logs/version_0/prediction.json.gz
 
-python cli.py predict \
-  --config configs/retriever.yaml \
-  --ckpt_path work/model/aio_02/retriever/lightning_logs/version_0/checkpoints/last.ckpt \
+python -m aio4_bpr_baseline.lightning_cli predict \
+  --config aio4_bpr_baseline/configs/retriever/bpr/retriever.yaml \
+  --model.biencoder_ckpt_file work/model/aio_02/biencoder/lightning_logs/version_0/checkpoints/last.ckpt \
+  --model.passage_faiss_index_file work/model/aio_02/embedder/lightning_logs/version_0/embedings.faiss \
   --model.predict_dataset_file work/data/aio_02/retriever/aio_02_dev.jsonl.gz \
-  --model.passage_faiss_index_file work/data/aio_02/passage_index/jawiki-20220404-c400-large.faiss \
-  --trainer.default_root_dir work/model/aio_02/retrieved_passages/aio_02_dev
-python gather_json_predictions.py \
-  --predictions_dir work/model/aio_02/retrieved_passages/aio_02_dev/lightning_logs/version_0/predictions \
-  --output_file work/model/aio_02/retrieved_passages/aio_02_dev/lightning_logs/version_0/prediction.jsonl.gz
+  --trainer.default_root_dir work/model/aio_02/retriever/aio_02_dev
+python -m aio4_bpr_baseline.utils.gather_json_predictions \
+  --predictions_dir work/model/aio_02/retriever/aio_02_dev/lightning_logs/version_0/predictions \
+  --output_file work/model/aio_02/retriever/aio_02_dev/lightning_logs/version_0/prediction.json.gz
 ```
 
 ### Retriever Evaluation
 
 ```sh
 mkdir -p work/data/aio_02/reader
-python evaluate_retriever.py \
-  --retriever_input_file  work/data/aio_02/retriever/aio_02_train.jsonl.gz \
-  --retriever_prediction_file work/model/aio_02/retrieved_passages/aio_02_train/lightning_logs/version_0/prediction.jsonl.gz \
+python -m aio4_bpr_baseline.utils.evaluate_retriever \
+  --input_file work/data/aio_02/retriever/aio_02_train.jsonl.gz \
+  --prediction_file work/model/aio_02/retriever/aio_02_train/lightning_logs/version_0/prediction.json.gz \
   --passage_dataset_file work/data/aio_02/passages/jawiki-20220404-c400-large.jsonl.gz \
-  --match_type nfkc \
+  --answer_match_type nfkc \
   --output_file work/data/aio_02/reader/aio_02_train.jsonl.gz
-# Recall@1: 0.7597 (16968/22335)
-# Recall@2: 0.8409 (18782/22335)
-# Recall@5: 0.8869 (19809/22335)
-# Recall@10: 0.9019 (20143/22335)
-# Recall@20: 0.9123 (20377/22335)
-# Recall@50: 0.9233 (20623/22335)
-# Recall@100: 0.9311 (20797/22335)
-# MRR@10: 0.8170
-python evaluate_retriever.py \
-  --retriever_input_file work/data/aio_02/retriever/aio_02_dev.jsonl.gz \
-  --retriever_prediction_file work/model/aio_02/retrieved_passages/aio_02_dev/lightning_logs/version_0/prediction.jsonl.gz \
+# Recall@1: 0.7597
+# Recall@2: 0.8409
+# Recall@5: 0.8869
+# Recall@10: 0.9019
+# Recall@20: 0.9123
+# Recall@50: 0.9233
+# Recall@100: 0.9311
+# MRR@10: 0.8158
+python -m aio4_bpr_baseline.utils.evaluate_retriever \
+  --input_file work/data/aio_02/retriever/aio_02_dev.jsonl.gz \
+  --prediction_file work/model/aio_02/retriever/aio_02_dev/lightning_logs/version_0/prediction.json.gz \
   --passage_dataset_file work/data/aio_02/passages/jawiki-20220404-c400-large.jsonl.gz \
-  --match_type nfkc \
+  --answer_match_type nfkc \
   --output_file work/data/aio_02/reader/aio_02_dev.jsonl.gz
-# Recall@1: 0.5500 (550/1000)
-# Recall@2: 0.6720 (672/1000)
-# Recall@5: 0.7750 (775/1000)
-# Recall@10: 0.8220 (822/1000)
-# Recall@20: 0.8500 (850/1000)
-# Recall@50: 0.8740 (874/1000)
-# Recall@100: 0.9010 (901/1000)
-# MRR@10: 0.6495
+# Recall@1: 0.5500
+# Recall@2: 0.6720
+# Recall@5: 0.7750
+# Recall@10: 0.8220
+# Recall@20: 0.8500
+# Recall@50: 0.8740
+# Recall@100: 0.9010
+# MRR@10: 0.6463
+```
+
+### Export BiEncoder to ONNX
+
+```sh
+mkdir work/model/aio_02/biencoder/lightning_logs/version_0/onnx
+python -m aio4_bpr_baseline.models.retriever.bpr.export_to_onnx \
+  --biencoder_ckpt_file work/model/aio_02/biencoder/lightning_logs/version_0/checkpoints/last.ckpt \
+  --output_dir work/model/aio_02/biencoder/lightning_logs/version_0/onnx
 ```
 
 ### Reader Training
 
 ```sh
-python cli.py fit \
-  --config configs/reader.yaml \
+python -m aio4_bpr_baseline.lightning_cli fit \
+  --config aio4_bpr_baseline/configs/reader/extractive_reader/reader.yaml \
   --model.train_dataset_file work/data/aio_02/reader/aio_02_train.jsonl.gz \
   --model.val_dataset_file work/data/aio_02/reader/aio_02_dev.jsonl.gz \
   --trainer.default_root_dir work/model/aio_02/reader
@@ -129,12 +149,12 @@ python cli.py fit \
 ### Reader Prediction
 
 ```sh
-python cli.py predict \
-  --config configs/reader.yaml \
-  --ckpt_path work/model/aio_02/reader/lightning_logs/version_0/checkpoints/best.ckpt \
-  --model.predict_dataset_file work/data/aio_02/retriever/aio_02_dev.jsonl.gz \
+python -m aio4_bpr_baseline.lightning_cli predict \
+  --config aio4_bpr_baseline/configs/reader/extractive_reader/reader_prediction.yaml \
+  --model.reader_ckpt_file work/model/aio_02/reader/lightning_logs/version_0/checkpoints/best.ckpt \
+  --model.predict_dataset_file work/data/aio_02/reader/aio_02_dev.jsonl.gz \
   --trainer.default_root_dir work/model/aio_02/reader_prediction/aio_02_dev
-python gather_json_predictions.py \
+python -m aio4_bpr_baseline.utils.gather_json_predictions \
   --predictions_dir work/model/aio_02/reader_prediction/aio_02_dev/lightning_logs/version_0/predictions \
   --output_file work/model/aio_02/reader_prediction/aio_02_dev/lightning_logs/version_0/prediction.jsonl.gz
 ```
@@ -142,48 +162,58 @@ python gather_json_predictions.py \
 ### Reader Evaluation
 
 ```sh
-python evaluate_reader.py \
-  --reader_input_file work/data/aio_02/retriever/aio_02_dev.jsonl.gz \
-  --reader_prediction_file work/model/aio_02/reader_prediction/aio_02_dev/lightning_logs/version_0/prediction.jsonl.gz \
-  --normalization_mode nfkc
-# Exact Match: 0.5600 (560/1000)
+python -m aio4_bpr_baseline.utils.evaluate_reader \
+  --input_file work/data/aio_02/reader/aio_02_dev.jsonl.gz \
+  --prediction_file work/model/aio_02/reader_prediction/aio_02_dev/lightning_logs/version_0/prediction.jsonl.gz \
+  --answer_normalization_mode nfkc
+# Exact Match: 0.5770 (577/1000)
+```
+
+### Export Reader to ONNX
+
+```sh
+mkdir work/model/aio_02/reader/lightning_logs/version_0/onnx
+python -m aio4_bpr_baseline.models.reader.extractive_reader.export_to_onnx \
+  --reader_ckpt_file work/model/aio_02/reader/lightning_logs/version_0/checkpoints/best.ckpt \
+  --output_dir work/model/aio_02/reader/lightning_logs/version_0/onnx
 ```
 
 ### Pipeline Prediction
 
 ```sh
-python cli.py predict \
-  --config configs/pipeline.yaml \
-  --model.retriever_ckpt_file work/model/aio_02/retriever/lightning_logs/version_0/checkpoints/last.ckpt \
+python -m aio4_bpr_baseline.lightning_cli predict \
+  --config aio4_bpr_baseline/configs/pipeline_aio4/bpr/pipeline.yaml \
+  --model.biencoder_ckpt_file work/model/aio_02/biencoder/lightning_logs/version_0/checkpoints/last.ckpt \
   --model.reader_ckpt_file work/model/aio_02/reader/lightning_logs/version_0/checkpoints/best.ckpt \
-  --model.predict_dataset_file data/aio_04_dev_unlabeled_v1.0.jsonl \
-  --model.passage_faiss_index_file work/data/aio_02/passage_index/jawiki-20220404-c400-large.faiss \
+  --model.passage_faiss_index_file work/model/aio_02/embedder/lightning_logs/version_0/embedings.faiss \
   --model.passage_dataset_file work/data/aio_02/passages/jawiki-20220404-c400-large.jsonl.gz \
+  --model.predict_dataset_file data/aio_04_dev_unlabeled_v1.0.jsonl \
+  --model.predict_retriever_k 10 \
   --model.predict_answer_score_threshold 0.3 \
-  --trainer.default_root_dir work/model/aio_02/pipeline/aio_04_dev
-python gather_json_predictions.py \
-  --predictions_dir work/model/aio_02/pipeline/aio_04_dev/lightning_logs/version_0/predictions \
-  --output_file work/model/aio_02/pipeline/aio_04_dev/lightning_logs/version_0/prediction.jsonl
+  --trainer.default_root_dir work/model/aio_02/pipeline_aio4/aio_04_dev
+python -m aio4_bpr_baseline.utils.gather_json_predictions \
+  --predictions_dir work/model/aio_02/pipeline_aio4/aio_04_dev/lightning_logs/version_0/predictions \
+  --output_file work/model/aio_02/pipeline_aio4/aio_04_dev/lightning_logs/version_0/prediction.jsonl
 ```
 
 ### Compute Scores
 
 ```sh
-python compute_score.py \
-  --prediction_file work/model/aio_02/pipeline/aio_04_dev/lightning_logs/version_0/prediction.jsonl \
+python -m compute_score \
+  --prediction_file work/model/aio_02/pipeline_aio4/aio_04_dev/lightning_logs/version_0/prediction.jsonl \
   --gold_file data/aio_04_dev_v1.0.jsonl \
   --limit_num_wrong_answers 3
 # num_questions: 500
-# num_correct: 251
-# num_missed: 188
+# num_correct: 273
+# num_missed: 166
 # num_failed: 61
-# accuracy: 50.2%
-# accuracy_score: 251.000
-# position_score: 88.826
-# total_score: 339.826
+# accuracy: 54.6%
+# accuracy_score: 273.000
+# position_score: 91.272
+# total_score: 364.272
 ```
 
-### Building and Running the Docker Container for Inference
+### Prepare a Docker image for the Final Submission
 
 ```sh
 mkdir input output

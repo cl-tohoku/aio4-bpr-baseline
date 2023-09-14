@@ -1,0 +1,19 @@
+model:
+  class_path: aio4_bpr_baseline.models.retriever.bpr.lightning_modules.BiEncoderLightningModule
+  init_args:
+    base_model_name: cl-tohoku/bert-base-japanese-v3
+trainer:
+  devices: 4
+  precision: 16-mixed
+  max_epochs: 40
+  gradient_clip_val: 2.0
+  callbacks:
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:
+        filename: best
+        monitor: val_average_rank
+        save_last: true
+    - class_path: lightning.pytorch.callbacks.LearningRateMonitor
+      init_args:
+        logging_interval: step
+seed_everything: 0

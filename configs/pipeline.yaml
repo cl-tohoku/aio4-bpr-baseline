@@ -1,8 +1,0 @@
-model:
-  class_path: models.pipeline.BPRPipeline
-trainer:
-  devices: 4
-  precision: 16-mixed
-  callbacks:
-    - class_path: callbacks.prediction_writer.JsonPredictionWriter
-seed_everything: 0

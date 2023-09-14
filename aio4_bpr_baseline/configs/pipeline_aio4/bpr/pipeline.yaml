@@ -1,0 +1,8 @@
+model:
+  class_path: aio4_bpr_baseline.models.pipeline_aio4.bpr.lightning_modules.PipelineLightningModule
+trainer:
+  devices: 4
+  precision: 16-mixed
+  callbacks:
+    - class_path: aio4_bpr_baseline.callbacks.prediction_writer.JsonPredictionWriter
+seed_everything: 0
