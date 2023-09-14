@@ -82,12 +82,10 @@ def main():
     if num_examples != num_prediction_items:
         raise ValueError(
             "The number of items in input_file and prediction_file are not the same.",
-            f"({num_examples}) != ({num_prediction_items})"
+            f"({num_examples}) != ({num_prediction_items})",
         )
 
-    metrics = compute_metrics(
-        examples, prediction_items, answer_normalization_mode=args.answer_normalization_mode
-    )
+    metrics = compute_metrics(examples, prediction_items, answer_normalization_mode=args.answer_normalization_mode)
 
     for key, value in metrics.items():
         print(f"{key}: {value:.4f}")

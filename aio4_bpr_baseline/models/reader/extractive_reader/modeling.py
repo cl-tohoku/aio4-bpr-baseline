@@ -13,9 +13,12 @@ class ReaderModel(nn.Module):
     def forward(self, tokenized_inputs: BatchEncoding) -> tuple[Tensor, Tensor, Tensor]:
         num_questions, max_passages, max_input_length = tokenized_inputs["input_ids"].size()
 
-        tokenized_inputs = BatchEncoding({
-            key: tensor.view(num_questions * max_passages, max_input_length) for key, tensor in tokenized_inputs.items()
-        })
+        tokenized_inputs = BatchEncoding(
+            {
+                key: tensor.view(num_questions * max_passages, max_input_length)
+                for key, tensor in tokenized_inputs.items()
+            }
+        )
         encoder_outputs = self.encoder(**tokenized_inputs).last_hidden_state
 
         classifier_logits = self.qa_classifier(encoder_outputs[:, 0]).view(num_questions, max_passages)

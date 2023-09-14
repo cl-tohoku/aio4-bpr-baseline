@@ -21,7 +21,10 @@ class RetrieverPredictionOnnxModule:
         self.passage_faiss_index = faiss.read_index_binary(passage_faiss_index_file)
 
     def retrieve_passages(
-        self, questions: list[str], k: int = 100, num_candidates: int = 1000,
+        self,
+        questions: list[str],
+        k: int = 100,
+        num_candidates: int = 1000,
     ) -> list[dict[str, list[int] | list[float]]]:
         tokenized_questions = self.question_tokenizer(questions, return_tensors="np")
         predictions = self._retrieve_passages_from_tokenized_questions(
@@ -30,7 +33,10 @@ class RetrieverPredictionOnnxModule:
         return predictions
 
     def _retrieve_passages_from_tokenized_questions(
-        self, tokenized_questions: BatchEncoding, k: int = 100, num_candidates: int = 1000,
+        self,
+        tokenized_questions: BatchEncoding,
+        k: int = 100,
+        num_candidates: int = 1000,
     ) -> list[dict[str, list[int] | list[float]]]:
         if num_candidates > self.passage_faiss_index.ntotal:
             raise ValueError(

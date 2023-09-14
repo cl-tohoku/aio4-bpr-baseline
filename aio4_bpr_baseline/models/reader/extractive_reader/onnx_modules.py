@@ -20,7 +20,10 @@ class ReaderPredictionOnnxModule:
         self.max_answer_length = max_answer_length
 
     def predict_answers(
-        self, questions: list[str], passage_titles: list[list[str]], passage_texts: list[list[str]],
+        self,
+        questions: list[str],
+        passage_titles: list[list[str]],
+        passage_texts: list[list[str]],
     ) -> list[dict[str, str | float]]:
         tokenized_inputs, passage_mask, span_mask = self.tokenizer(
             questions, passage_titles, passage_texts, return_tensors="np"

@@ -112,7 +112,7 @@ class BiEncoderLightningModule(LightningModule):
             if self.trainer.training and self.hparams.shuffle_negative_passages:
                 random.shuffle(negative_passage_idxs)
 
-            passage_idxs = [positive_passage_idxs[0]] + negative_passage_idxs[:self.hparams.max_negative_passages]
+            passage_idxs = [positive_passage_idxs[0]] + negative_passage_idxs[: self.hparams.max_negative_passages]
             passages = [example["passages"][idx] for idx in passage_idxs]
 
             num_passages = len(passages)
@@ -355,7 +355,10 @@ class RetrieverLightningModule(LightningModule):
         return predictions
 
     def retrieve_passages(
-        self, questions: list[str], k: int = 100, num_candidates: int = 1000,
+        self,
+        questions: list[str],
+        k: int = 100,
+        num_candidates: int = 1000,
     ) -> list[dict[str, list[int] | list[float]]]:
         tokenized_questions = self.biencoder_module.question_tokenizer(questions).to(self.device)
         predictions = self.retrieve_passages_from_tokenized_questions(
@@ -364,7 +367,10 @@ class RetrieverLightningModule(LightningModule):
         return predictions
 
     def retrieve_passages_from_tokenized_questions(
-        self, tokenized_questions: BatchEncoding, k: int = 100, num_candidates: int = 1000,
+        self,
+        tokenized_questions: BatchEncoding,
+        k: int = 100,
+        num_candidates: int = 1000,
     ) -> list[dict[str, list[int] | list[float]]]:
         assert not self.biencoder_module.training
 

@@ -42,7 +42,8 @@ class ReaderTokenizer:
         questions_repeated = [question for each_question in questions for question in [each_question] * max_passages]
         passages_flattened = [
             title + self.tokenizer.sep_token + text
-            for titles, texts in zip(passage_titles, passage_texts) for title, text in zip(titles, texts)
+            for titles, texts in zip(passage_titles, passage_texts)
+            for title, text in zip(titles, texts)
         ]
         passage_titles_flattened = [title for titles in passage_titles for title in titles]
         assert len(questions_repeated) == num_questions * max_passages
@@ -73,17 +74,17 @@ class ReaderTokenizer:
         if return_tensors == "pt":
             import torch
 
-            tokenized_inputs = BatchEncoding({
-                key: tensor.view(num_questions, max_passages, -1) for key, tensor in tokenized_inputs.items()
-            })
+            tokenized_inputs = BatchEncoding(
+                {key: tensor.view(num_questions, max_passages, -1) for key, tensor in tokenized_inputs.items()}
+            )
             span_mask = span_mask.view(num_questions, max_passages, -1)
             passage_mask = torch.tensor(passage_mask).bool()
         else:
             import numpy as np
 
-            tokenized_inputs = BatchEncoding({
-                key: array.reshape(num_questions, max_passages, -1) for key, array in tokenized_inputs.items()
-            })
+            tokenized_inputs = BatchEncoding(
+                {key: array.reshape(num_questions, max_passages, -1) for key, array in tokenized_inputs.items()}
+            )
             span_mask = span_mask.reshape(num_questions, max_passages, -1)
             passage_mask = np.array(passage_mask, dtype=bool)
 

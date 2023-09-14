@@ -161,7 +161,7 @@ def main():
     if num_examples != num_prediction_items:
         raise ValueError(
             "The number of items in input_file and prediction_file are not the same.",
-            f"({num_examples}) != ({num_prediction_items})"
+            f"({num_examples}) != ({num_prediction_items})",
         )
 
     passage_dataset = load_passage_dataset(args.passage_dataset_file, args.datasets_num_proc)

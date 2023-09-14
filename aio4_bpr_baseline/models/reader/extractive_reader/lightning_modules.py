@@ -117,7 +117,8 @@ class ReaderLightningModule(LightningModule):
             if example["question"] in gold_passages_info:
                 gold_passage_title = gold_passages_info[example["question"]]["title"]
                 gold_positive_passage_idxs = [
-                    idx for idx in example["positive_passage_idxs"]
+                    idx
+                    for idx in example["positive_passage_idxs"]
                     if example["passages"][idx]["title"].lower() == gold_passage_title.lower()
                 ]
                 filtered_positive_passage_idxs = _filter_passage_idxs(gold_positive_passage_idxs)
@@ -179,7 +180,7 @@ class ReaderLightningModule(LightningModule):
             if self.trainer.training and self.hparams.shuffle_negative_passages:
                 random.shuffle(negative_passage_idxs)
 
-            passage_idxs = [positive_passage_idxs[0]] + negative_passage_idxs[:self.hparams.max_negative_passages]
+            passage_idxs = [positive_passage_idxs[0]] + negative_passage_idxs[: self.hparams.max_negative_passages]
             passages = [example["passages"][idx] for idx in passage_idxs]
 
             passage_titles.append([passage["title"] for passage in passages])
@@ -191,8 +192,8 @@ class ReaderLightningModule(LightningModule):
         positive_span_mask = span_mask[:, 0, :]
 
         answer_starts: list[list[int]] = []
-        answer_ends: list[list[int]]  = []
-        answer_mask: list[list[int]]  = []
+        answer_ends: list[list[int]] = []
+        answer_mask: list[list[int]] = []
 
         for i in range(num_questions):
             answer_spans = []
@@ -204,7 +205,7 @@ class ReaderLightningModule(LightningModule):
                     max_answer_length=self.hparams.max_answer_length,
                 )
 
-            answer_spans = answer_spans[:self.hparams.max_answer_spans]
+            answer_spans = answer_spans[: self.hparams.max_answer_spans]
             num_answer_spans = len(answer_spans)
             assert num_answer_spans > 0
 
@@ -431,7 +432,7 @@ class ReaderPredictionLightningModule(LightningModule):
         for example in examples:
             questions.append(example["question"])
 
-            passages = example["passages"][:self.hparams.predict_max_passages]
+            passages = example["passages"][: self.hparams.predict_max_passages]
             passage_titles.append([passage["title"] for passage in passages])
             passage_texts.append([passage["text"] for passage in passages])
 
