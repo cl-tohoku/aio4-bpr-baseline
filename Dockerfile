@@ -29,8 +29,6 @@ ARG TRANSFORMERS_BASE_MODEL_NAME="cl-tohoku/bert-base-japanese-v3"
 RUN python -c "from transformers import AutoTokenizer; AutoTokenizer.from_pretrained('${TRANSFORMERS_BASE_MODEL_NAME}')"
 ENV TRANSFORMERS_OFFLINE=1
 
-RUN python -c 'from datasets import Dataset; from aio4_bpr_baseline.utils.data import PASSAGE_DATASET_FEATURES; Dataset.from_json("/work/passages.json.gz", features=PASSAGE_DATASET_FEATURES)'
-
 # Start the prediction loop
 WORKDIR /code
 ENTRYPOINT ["python", "-m", "prediction_loop"]

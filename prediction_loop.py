@@ -37,7 +37,10 @@ def main():
     logger.info("Finished loading PipelineOnnxModule")
 
     while True:
-        for input_file in Path(INPUT_DIR).iterdir():
+        input_files = list(Path(INPUT_DIR).iterdir())
+        logger.info("Input files: %s", [input_file.name for input_file in input_files])
+
+        for input_file in input_files:
             logger.info("Processing %s", input_file.name)
 
             input_item = json.load(open(input_file))
@@ -58,7 +61,7 @@ def main():
             logger.info("Removing %s", input_file.name)
             input_file.unlink()
 
-        sleep(1.0)
+        sleep(5.0)
 
 
 if __name__ == "__main__":
