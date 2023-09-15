@@ -15,9 +15,11 @@ pip install -e '.[lightning,onnx]'
 
 ## Example Usage
 
-**Note:** The following example is run on a server with 4 GPUs, each with at least 16 GB of memory.
+**Note:** The following example is run on a server with 4 GPUs, each with 16 GB of memory.
 
-### Download datasets
+### Preparing Datasets
+
+**1. Download datasets**
 
 ```sh
 mkdir data
@@ -26,7 +28,7 @@ wget https://github.com/cl-tohoku/quiz-datasets/releases/download/v1.0.0/dataset
 wget https://github.com/cl-tohoku/quiz-datasets/releases/download/v1.0.1/passages.jawiki-20220404-c400-large.jsonl.gz -P data
 ```
 
-### Preprocess the datasets
+**2. Preprocess the datasets**
 
 ```sh
 mkdir -p work/data/aio_02/retriever
@@ -43,7 +45,9 @@ python -m convert_passage_dataset \
   --output_file work/data/aio_02/passages/jawiki-20220404-c400-large.jsonl.gz
 ```
 
-### BiEncoder Training
+### Training and Evaluating Retriever
+
+**1. Train a biencoder**
 
 ```sh
 python -m aio4_bpr_baseline.lightning_cli fit \
@@ -53,7 +57,7 @@ python -m aio4_bpr_baseline.lightning_cli fit \
   --trainer.default_root_dir work/model/aio_02/biencoder
 ```
 
-### Embedder Prediction
+**2. Build passage embeddings**
 
 ```sh
 python -m aio4_bpr_baseline.lightning_cli predict \
@@ -69,7 +73,7 @@ python -m aio4_bpr_baseline.models.retriever.bpr.build_faiss_index \
   --output_file work/model/aio_02/embedder/lightning_logs/version_0/embedings.faiss
 ```
 
-### Retriever Prediction
+**3. Retrieve passages for questions**
 
 ```sh
 python -m aio4_bpr_baseline.lightning_cli predict \
@@ -93,7 +97,7 @@ python -m aio4_bpr_baseline.utils.gather_json_predictions \
   --output_file work/model/aio_02/retriever/aio_02_dev/lightning_logs/version_0/prediction.json.gz
 ```
 
-### Retriever Evaluation
+**4. Evaluate the retriever performance**
 
 ```sh
 mkdir -p work/data/aio_02/reader
@@ -127,7 +131,7 @@ python -m aio4_bpr_baseline.utils.evaluate_retriever \
 # MRR@10: 0.6463
 ```
 
-### Export BiEncoder to ONNX
+**5. Export the biencoder to ONNX**
 
 ```sh
 mkdir work/model/aio_02/biencoder/lightning_logs/version_0/onnx
@@ -136,7 +140,9 @@ python -m aio4_bpr_baseline.models.retriever.bpr.export_to_onnx \
   --output_dir work/model/aio_02/biencoder/lightning_logs/version_0/onnx
 ```
 
-### Reader Training
+### Training and Evaluating Reader
+
+**1. Train a reader**
 
 ```sh
 python -m aio4_bpr_baseline.lightning_cli fit \
@@ -146,7 +152,7 @@ python -m aio4_bpr_baseline.lightning_cli fit \
   --trainer.default_root_dir work/model/aio_02/reader
 ```
 
-### Reader Prediction
+**2. Predict answers for questions**
 
 ```sh
 python -m aio4_bpr_baseline.lightning_cli predict \
@@ -159,7 +165,7 @@ python -m aio4_bpr_baseline.utils.gather_json_predictions \
   --output_file work/model/aio_02/reader_prediction/aio_02_dev/lightning_logs/version_0/prediction.jsonl.gz
 ```
 
-### Reader Evaluation
+**3. Evaluate the reader performance**
 
 ```sh
 python -m aio4_bpr_baseline.utils.evaluate_reader \
@@ -169,7 +175,7 @@ python -m aio4_bpr_baseline.utils.evaluate_reader \
 # Exact Match: 0.5770 (577/1000)
 ```
 
-### Export Reader to ONNX
+**4. Export the reader to ONNX**
 
 ```sh
 mkdir work/model/aio_02/reader/lightning_logs/version_0/onnx
@@ -178,7 +184,9 @@ python -m aio4_bpr_baseline.models.reader.extractive_reader.export_to_onnx \
   --output_dir work/model/aio_02/reader/lightning_logs/version_0/onnx
 ```
 
-### Pipeline Prediction
+### Running Pipeline of Retriever and Reader
+
+**1. Predict answers for the questions in AIO4 development data**
 
 ```sh
 python -m aio4_bpr_baseline.lightning_cli predict \
@@ -196,7 +204,7 @@ python -m aio4_bpr_baseline.utils.gather_json_predictions \
   --output_file work/model/aio_02/pipeline_aio4/aio_04_dev/lightning_logs/version_0/prediction.jsonl
 ```
 
-### Compute Scores
+**2. Compute the scores**
 
 ```sh
 python -m compute_score \
@@ -220,8 +228,32 @@ mkdir input output
 
 docker build -t aio4-bpr-baseline .
 docker run --rm -v $(realpath input):/input -v $(realpath output):/output aio4-bpr-baseline
+```
 
+```sh
 echo '{"qid": "AIO04-0005", "position": 36, "question": "味がまずい魚のことを、猫でさえ見向きもしないということから俗に何という?"}' > input/example.json
 cat output/example.json
 # {"qid": "AIO04-0005", "position": 36, "prediction": "猫またぎ"}
+```
+
+## License
+
+<a rel="license" href="http://creativecommons.org/licenses/by-nc/4.0/"><img alt="Creative Commons License" style="border-width:0" src="https://i.creativecommons.org/l/by-nc/4.0/88x31.png" /></a><br />This
+work is licensed under a
+<a rel="license" href="http://creativecommons.org/licenses/by-nc/4.0/">Creative
+Commons Attribution-NonCommercial 4.0 International License</a>.
+
+## Citation
+
+If you find this work useful, please cite the following paper:
+
+[Efficient Passage Retrieval with Hashing for Open-domain Question Answering](https://arxiv.org/abs/2106.00882)
+
+```
+@inproceedings{yamada2021bpr,
+  title={Efficient Passage Retrieval with Hashing for Open-domain Question Answering},
+  author={Ikuya Yamada and Akari Asai and Hannaneh Hajishirzi},
+  booktitle={ACL},
+  year={2021}
+}
 ```
