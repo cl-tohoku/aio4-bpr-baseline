@@ -15,7 +15,9 @@ class RetrieverPredictionOnnxModule:
         base_model_name: str = "bert-base-uncased",
         max_question_length: int = 256,
     ) -> None:
-        self.question_encoder_session = ort.InferenceSession(question_encoder_onnx_file)
+        self.question_encoder_session = ort.InferenceSession(
+            question_encoder_onnx_file, providers=["CPUExecutionProvider"]
+        )
         self.question_tokenizer = QuestionEncoderTokenizer(base_model_name, max_question_length=max_question_length)
 
         self.passage_faiss_index = faiss.read_index_binary(passage_faiss_index_file)

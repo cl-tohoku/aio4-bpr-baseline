@@ -15,7 +15,7 @@ class ReaderPredictionOnnxModule:
         max_input_length: int = 350,
         max_answer_length: int = 10,
     ) -> None:
-        self.reader_session = ort.InferenceSession(reader_onnx_file)
+        self.reader_session = ort.InferenceSession(reader_onnx_file, providers=["CPUExecutionProvider"])
         self.tokenizer = ReaderTokenizer(base_model_name, max_input_length=max_input_length)
         self.max_answer_length = max_answer_length
 
