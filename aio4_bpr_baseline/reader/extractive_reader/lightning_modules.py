@@ -12,16 +12,17 @@ from torch.utils.data import DataLoader
 from transformers import BatchEncoding
 from transformers.optimization import get_linear_schedule_with_warmup
 
-from aio4_bpr_baseline.models.reader.extractive_reader.modeling import ReaderModel
-from aio4_bpr_baseline.models.reader.extractive_reader.tokenization import ReaderTokenizer
-from aio4_bpr_baseline.utils.data import DATASET_FEATURES
+from aio4_bpr_baseline.reader.extractive_reader.modeling import ExtractiveReaderModel
+from aio4_bpr_baseline.reader.extractive_reader.tokenization import ExtractiveReaderTokenizer
+from aio4_bpr_baseline.utils.data import DATASET_FEATURES, PASSAGES_FEATURES
 
 
-class ReaderLightningModule(LightningModule):
+class ExtractiveReaderLightningModule(LightningModule):
     def __init__(
         self,
-        train_dataset_file: str | None = None,
-        val_dataset_file: str | None = None,
+        train_dataset_file: str,
+        val_dataset_file: str,
+        passages_file: str,
         train_gold_passages_info_file: str | None = None,
         val_gold_passages_info_file: str | None = None,
         train_batch_size: int = 1,
@@ -41,99 +42,103 @@ class ReaderLightningModule(LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
-        self.tokenizer = ReaderTokenizer(self.hparams.base_model_name, max_input_length=self.hparams.max_input_length)
-        self.reader = ReaderModel(self.hparams.base_model_name)
+        self.tokenizer = ExtractiveReaderTokenizer(
+            self.hparams.base_model_name, max_input_length=self.hparams.max_input_length
+        )
+
+        self.reader = ExtractiveReaderModel(self.hparams.base_model_name)
 
     def prepare_data(self):
-        if self.hparams.train_dataset_file is not None:
-            self._load_dataset(
-                self.hparams.train_dataset_file, gold_passages_info_file=self.hparams.train_gold_passages_info_file
-            )
-        if self.hparams.val_dataset_file is not None:
-            self._load_dataset(
-                self.hparams.val_dataset_file, gold_passages_info_file=self.hparams.val_gold_passages_info_file
-            )
+        self._load_passages(self.hparams.passages_file)
+        self._load_dataset(
+            self.hparams.train_dataset_file, gold_passages_info_file=self.hparams.train_gold_passages_info_file
+        )
+        self._load_dataset(
+            self.hparams.val_dataset_file, gold_passages_info_file=self.hparams.val_gold_passages_info_file
+        )
 
     def setup(self, stage: str):
-        if stage == "fit":
-            self.train_dataset = self._load_dataset(
-                self.hparams.train_dataset_file, gold_passages_info_file=self.hparams.train_gold_passages_info_file
-            )
-            self.val_dataset = self._load_dataset(
-                self.hparams.val_dataset_file, gold_passages_info_file=self.hparams.val_gold_passages_info_file
-            )
+        self.all_passages = self._load_passages(self.hparams.passages_file)
+        self.train_dataset = self._load_dataset(
+            self.hparams.train_dataset_file, gold_passages_info_file=self.hparams.train_gold_passages_info_file
+        )
+        self.val_dataset = self._load_dataset(
+            self.hparams.val_dataset_file, gold_passages_info_file=self.hparams.val_gold_passages_info_file
+        )
+
+    def _load_passages(self, passages_file: str) -> Dataset:
+        return Dataset.from_json(passages_file, features=PASSAGES_FEATURES)
 
     def _load_dataset(self, dataset_file: str, gold_passages_info_file: str | None = None) -> Dataset:
-        gold_passages_info: dict[str, dict[str, str]] = {}
+        gold_passages = {}
 
         if gold_passages_info_file is not None:
-            for item in json.load(open(gold_passages_info_file))["data"]:
-                question = item["question"]
-                question_tokens = item.get("question_tokens")
+            for gold_info in json.load(open(gold_passages_info_file))["data"]:
+                gold_passage = {"title": gold_info["title"], "text": gold_info["context"]}
 
-                passage = {"title": item["title"], "text": item["context"]}
+                gold_passages[gold_info["question"]] = gold_passage
+                if "question_tokens" in gold_info:
+                    gold_passages[gold_info["question_tokens"]] = gold_passage
 
-                gold_passages_info[question] = passage
-                if question_tokens is not None:
-                    gold_passages_info[question_tokens] = passage
-
-        tokenizer = ReaderTokenizer(self.hparams.base_model_name, max_input_length=self.hparams.max_input_length)
+        tokenizer = ExtractiveReaderTokenizer(
+            self.hparams.base_model_name, max_input_length=self.hparams.max_input_length
+        )
         max_answer_length = self.hparams.max_answer_length
+        all_passages = self._load_passages(self.hparams.passages_file)
 
-        def _preprocess_example(example: dict[str, Any]) -> dict[str, Any]:
-            def _filter_passage_idxs(passage_idxs: list[int]) -> list[int]:
-                num_passages = len(passage_idxs)
+        def _map_example(example: dict[str, Any]) -> dict[str, Any]:
+            question = example["question"]
+            answers = example["answers"]
+            positive_passages = example["positive_passages"]
+
+            def _filter_passages(passages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+                num_passages = len(passages)
                 if num_passages == 0:
                     return []
 
-                question = example["question"]
-
-                passages = [example["passages"][idx] for idx in passage_idxs]
-                passage_titles = [passage["title"] for passage in passages]
-                passage_texts = [passage["text"] for passage in passages]
-
-                tokenized_inputs, _, span_mask = tokenizer(
-                    [question], [passage_titles], [passage_texts], return_tensors="np"
-                )
+                questions = [question] * num_passages
+                passage_titles = [all_passages[passage["idx"]]["title"] for passage in passages]
+                passage_texts = [all_passages[passage["idx"]]["text"] for passage in passages]
+                tokenized_inputs, span_mask = tokenizer(questions, passage_titles, passage_texts, return_tensors="np")
                 input_ids = tokenized_inputs["input_ids"]
 
-                filtered_passage_idxs: list[int] = []
-                for j in range(num_passages):
-                    answer_spans = []
-                    for answer in example["answers"]:
-                        answer_spans += tokenizer.find_answer_spans(
+                filtered_passages = []
+                for i, passage in enumerate(passages):
+                    for answer in answers:
+                        answer_spans = tokenizer.find_answer_spans(
                             answer,
-                            input_ids[0, j, :].tolist(),
-                            span_mask=span_mask[0, j, :].tolist(),
+                            input_ids[i, :].tolist(),
+                            span_mask=span_mask[i, :].tolist(),
                             max_answer_length=max_answer_length,
                         )
+                        if len(answer_spans) > 0:
+                            filtered_passages.append(passage)
+                            break
 
-                    if len(answer_spans) > 0:
-                        filtered_passage_idxs.append(passage_idxs[j])
+                return filtered_passages
 
-                return filtered_passage_idxs
-
-            filtered_positive_passage_idxs: list[int] = []
-            if example["question"] in gold_passages_info:
-                gold_passage_title = gold_passages_info[example["question"]]["title"]
-                gold_positive_passage_idxs = [
-                    idx
-                    for idx in example["positive_passage_idxs"]
-                    if example["passages"][idx]["title"].lower() == gold_passage_title.lower()
+            filtered_positive_passages = []
+            if question in gold_passages:
+                gold_passage_title = gold_passages[question]["title"]
+                gold_positive_passages = [
+                    passage for passage in positive_passages if passage["title"].lower() == gold_passage_title.lower()
                 ]
-                filtered_positive_passage_idxs = _filter_passage_idxs(gold_positive_passage_idxs)
+                filtered_positive_passages = _filter_passages(gold_positive_passages)
 
-            if len(filtered_positive_passage_idxs) == 0:
-                filtered_positive_passage_idxs = _filter_passage_idxs(example["positive_passage_idxs"])
+            if len(filtered_positive_passages) == 0:
+                filtered_positive_passages = _filter_passages(positive_passages)
 
-            example["positive_passage_idxs"] = filtered_positive_passage_idxs
+            example["positive_passages"] = filtered_positive_passages
             return example
 
         def _filter_example(example: dict[str, Any]) -> bool:
-            return len(example["positive_passage_idxs"]) > 0
+            if len(example["positive_passages"]) == 0:
+                return False
 
-        dataset = Dataset.from_json(dataset_file, features=DATASET_FEATURES, num_proc=self.hparams.datasets_num_proc)
-        dataset = dataset.map(_preprocess_example, num_proc=self.hparams.datasets_num_proc)
+            return True
+
+        dataset = Dataset.from_json(dataset_file, features=DATASET_FEATURES)
+        dataset = dataset.map(_map_example, num_proc=self.hparams.datasets_num_proc)
         dataset = dataset.filter(_filter_example, num_proc=self.hparams.datasets_num_proc)
 
         return dataset
@@ -161,64 +166,82 @@ class ReaderLightningModule(LightningModule):
         return dataloader
 
     def _collate_fn(
-        self, examples: list[dict[str, Any]]
+        self, examples: list[dict[str, Any]], stage: str = "fit",
     ) -> tuple[BatchEncoding, Tensor, Tensor, Tensor, Tensor, Tensor]:
         num_questions = len(examples)
+        max_passages = 1 + self.hparams.max_negative_passages
+        max_answer_spans = self.hparams.max_answer_spans
 
-        questions: list[str] = []
-        passage_titles: list[list[str]] = []
-        passage_texts: list[list[str]] = []
+        questions = []
+        passage_titles = []
+        passage_texts = []
+        passage_mask = []
 
         for example in examples:
-            questions.append(example["question"])
+            questions.extend([example["question"]] * max_passages)
 
-            positive_passage_idxs = example["positive_passage_idxs"]
+            positive_passages = example["positive_passages"]
             if self.trainer.training and self.hparams.shuffle_positive_passages:
-                random.shuffle(positive_passage_idxs)
+                random.shuffle(positive_passages)
 
-            negative_passage_idxs = example["negative_passage_idxs"]
+            negative_passages = example["negative_passages"]
             if self.trainer.training and self.hparams.shuffle_negative_passages:
-                random.shuffle(negative_passage_idxs)
+                random.shuffle(negative_passages)
 
-            passage_idxs = [positive_passage_idxs[0]] + negative_passage_idxs[: self.hparams.max_negative_passages]
-            passages = [example["passages"][idx] for idx in passage_idxs]
+            passages = [positive_passages[0]] + negative_passages[: self.hparams.max_negative_passages]
 
-            passage_titles.append([passage["title"] for passage in passages])
-            passage_texts.append([passage["text"] for passage in passages])
+            num_passages = len(passages)
+            passage_titles.extend([self.all_passages[passage["idx"]]["title"] for passage in passages])
+            passage_texts.extend([self.all_passages[passage["idx"]]["text"] for passage in passages])
+            passage_mask.extend([1] * num_passages)
 
-        tokenized_inputs, passage_mask, span_mask = self.tokenizer(questions, passage_titles, passage_texts)
+            num_dummy_passages = max_passages - num_passages
+            passage_titles.extend([""] * num_dummy_passages)
+            passage_texts.extend([""] * num_dummy_passages)
+            passage_mask.extend([0] * num_dummy_passages)
+
+        tokenized_inputs, span_mask = self.tokenizer(questions, passage_titles, passage_texts)
+        tokenized_inputs = BatchEncoding(
+            {k: v.view(num_questions, max_passages, -1) for k, v in tokenized_inputs.items()}
+        )
+        span_mask = span_mask.view(num_questions, max_passages, -1)
+        passage_mask = torch.tensor(passage_mask).view(num_questions, max_passages).bool()
 
         positive_input_ids = tokenized_inputs["input_ids"][:, 0, :]
         positive_span_mask = span_mask[:, 0, :]
 
-        answer_starts: list[list[int]] = []
-        answer_ends: list[list[int]] = []
-        answer_mask: list[list[int]] = []
+        answer_starts = []
+        answer_ends = []
+        answer_mask = []
 
-        for i in range(num_questions):
+        for i, example in enumerate(examples):
+            answers = example["answers"]
+
             answer_spans = []
-            for answer in examples[i]["answers"]:
-                answer_spans += self.tokenizer.find_answer_spans(
+            for answer in answers:
+                answer_spans.extend(self.tokenizer.find_answer_spans(
                     answer,
                     positive_input_ids[i].tolist(),
                     span_mask=positive_span_mask[i].tolist(),
                     max_answer_length=self.hparams.max_answer_length,
-                )
+                ))
 
-            answer_spans = answer_spans[: self.hparams.max_answer_spans]
+            answer_spans = answer_spans[: max_answer_spans]
+
             num_answer_spans = len(answer_spans)
             assert num_answer_spans > 0
+            answer_starts.extend([span[0] for span in answer_spans])
+            answer_ends.extend([span[1] for span in answer_spans])
+            answer_mask.extend([1] * num_answer_spans)
 
-            num_dummy_answer_spans = self.hparams.max_answer_spans - num_answer_spans
-            answer_spans += [(0, 0)] * num_dummy_answer_spans
+            num_dummy_answer_spans = max_answer_spans - num_answer_spans
+            answer_starts.extend([0] * num_dummy_answer_spans)
+            answer_ends.extend([0] * num_dummy_answer_spans)
+            answer_mask.extend([0] * num_dummy_answer_spans)
 
-            answer_starts.append([span[0] for span in answer_spans])
-            answer_ends.append([span[1] for span in answer_spans])
-            answer_mask.append([1] * num_answer_spans + [0] * num_dummy_answer_spans)
-
-        answer_starts = torch.tensor(answer_starts)
-        answer_ends = torch.tensor(answer_ends)
-        answer_mask = torch.tensor(answer_mask).bool()
+        answer_starts = torch.tensor(answer_starts).view(num_questions, max_answer_spans)
+        answer_ends = torch.tensor(answer_ends).view(num_questions, max_answer_spans)
+        answer_mask = torch.tensor(answer_mask).view(num_questions, max_answer_spans).bool()
 
         return tokenized_inputs, passage_mask, span_mask, answer_starts, answer_ends, answer_mask
 
@@ -226,54 +249,68 @@ class ReaderLightningModule(LightningModule):
         self, batch: tuple[BatchEncoding, Tensor, Tensor, Tensor, Tensor, Tensor], batch_idx: int
     ) -> Tensor:
         tokenized_inputs, passage_mask, span_mask, answer_starts, answer_ends, answer_mask = batch
+        num_questions, max_passages, _ = tokenized_inputs["input_ids"].size()
 
-        classifier_logits, start_logits, end_logits = self.reader(tokenized_inputs)
+        classifier_logits, start_logits, end_logits = self.reader(
+            BatchEncoding({k: v.view(num_questions * max_passages, -1) for k, v in tokenized_inputs.items()})
+        )
+        classifier_logits = classifier_logits.view(num_questions, max_passages)
+        start_logits = start_logits.view(num_questions, max_passages, -1)
+        end_logits = end_logits.view(num_questions, max_passages, -1)
 
         positive_start_logits = start_logits[:, 0, :]
         positive_end_logits = end_logits[:, 0, :]
         positive_span_mask = span_mask[:, 0, :]
 
         classifier_loss = self._compute_classifier_loss(classifier_logits, passage_mask)
+        self.log("train_classifier_loss", classifier_loss)
+
         span_loss = self._compute_span_loss(
             positive_start_logits, positive_end_logits, positive_span_mask, answer_starts, answer_ends, answer_mask
         )
-        loss = classifier_loss + span_loss
+        self.log("train_span_loss", span_loss)
 
-        metrics = {"train_loss": loss, "train_classifier_loss": classifier_loss, "train_span_loss": span_loss}
-        self.log_dict(metrics)
+        loss = classifier_loss + span_loss
+        self.log("train_loss", loss)
 
         return loss
 
     def validation_step(self, batch: tuple[BatchEncoding, Tensor, Tensor, Tensor, Tensor, Tensor], batch_idx: int):
         tokenized_inputs, passage_mask, span_mask, answer_starts, answer_ends, answer_mask = batch
+        num_questions, max_passages, _ = tokenized_inputs["input_ids"].size()
 
-        classifier_logits, start_logits, end_logits = self.reader(tokenized_inputs)
+        classifier_logits, start_logits, end_logits = self.reader(
+            BatchEncoding({k: v.view(num_questions * max_passages, -1) for k, v in tokenized_inputs.items()})
+        )
+        classifier_logits = classifier_logits.view(num_questions, max_passages)
+        start_logits = start_logits.view(num_questions, max_passages, -1)
+        end_logits = end_logits.view(num_questions, max_passages, -1)
 
         positive_start_logits = start_logits[:, 0, :]
         positive_end_logits = end_logits[:, 0, :]
         positive_span_mask = span_mask[:, 0, :]
 
         classifier_loss = self._compute_classifier_loss(classifier_logits, passage_mask)
+        self.log("val_classifier_loss", classifier_loss, sync_dist=True)
+
         span_loss = self._compute_span_loss(
             positive_start_logits, positive_end_logits, positive_span_mask, answer_starts, answer_ends, answer_mask
         )
+        self.log("val_span_loss", span_loss, sync_dist=True)
+
         loss = classifier_loss + span_loss
+        self.log("val_loss", loss, sync_dist=True)
 
         classifier_accuracy = self._compute_classifier_accuracy(classifier_logits, passage_mask)
+        self.log("val_classifier_accuracy", classifier_accuracy)
+
         span_accuracy = self._compute_span_accuracy(
             positive_start_logits, positive_end_logits, positive_span_mask, answer_starts, answer_ends, answer_mask
         )
-        joint_accuracy = classifier_accuracy * span_accuracy
+        self.log("val_span_accuracy", span_accuracy, sync_dist=True)
 
-        metrics = {
-            "val_loss": loss,
-            "val_classifier_loss": classifier_loss,
-            "val_span_loss": span_loss,
-            "val_classifier_accuracy": classifier_accuracy,
-            "val_span_accuracy": span_accuracy,
-            "val_joint_accuracy": joint_accuracy,
-        }
-        self.log_dict(metrics)
+        joint_accuracy = classifier_accuracy * span_accuracy
+        self.log("val_joint_accuracy", joint_accuracy, sync_dist=True)
 
     def _compute_classifier_loss(self, classifier_logits: Tensor, passage_mask: Tensor) -> Tensor:
         num_questions, _ = classifier_logits.size()
@@ -383,11 +420,12 @@ class ReaderLightningModule(LightningModule):
         return [optimizer], [{"scheduler": lr_scheduler, "interval": "step"}]
 
 
-class ReaderPredictionLightningModule(LightningModule):
+class ExtractiveReaderPredictLightningModule(LightningModule):
     def __init__(
         self,
         reader_ckpt_file: str,
         predict_dataset_file: str | None = None,
+        passages_file: str | None = None,
         predict_batch_size: int = 1,
         predict_max_passages: int = 100,
         datasets_num_proc: int | None = None,
@@ -396,22 +434,24 @@ class ReaderPredictionLightningModule(LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
-        self.reader_module = ReaderLightningModule.load_from_checkpoint(
+        self.reader_module = ExtractiveReaderLightningModule.load_from_checkpoint(
             self.hparams.reader_ckpt_file, map_location="cpu", strict=False
         )
         self.reader_module.freeze()
 
     def prepare_data(self):
-        if self.hparams.predict_dataset_file is not None:
-            self._load_dataset(self.hparams.predict_dataset_file)
+        self._load_passages(self.hparams.passages_file)
+        self._load_dataset(self.hparams.predict_dataset_file)
 
     def setup(self, stage: str):
-        if stage == "predict":
-            self.predict_dataset = self._load_dataset(self.hparams.predict_dataset_file)
+        self.all_passages = self._load_passages(self.hparams.passages_file)
+        self.predict_dataset = self._load_dataset(self.hparams.predict_dataset_file)
+
+    def _load_passages(self, passages_file: str) -> Dataset:
+        return Dataset.from_json(passages_file, features=PASSAGES_FEATURES)
 
     def _load_dataset(self, dataset_file: str) -> Dataset:
-        dataset = Dataset.from_json(dataset_file, num_proc=self.hparams.datasets_num_proc)
-        return dataset
+        return Dataset.from_json(dataset_file, features=DATASET_FEATURES)
 
     def predict_dataloader(self) -> DataLoader:
         dataloader = DataLoader(
@@ -425,66 +465,104 @@ class ReaderPredictionLightningModule(LightningModule):
         return dataloader
 
     def _collate_fn(self, examples: list[dict[str, Any]]) -> tuple[BatchEncoding, Tensor, Tensor]:
-        questions: list[str] = []
-        passage_titles: list[list[str]] = []
-        passage_texts: list[list[str]] = []
+        num_questions = len(examples)
+        max_passages = self.hparams.predict_max_passages
+
+        questions = []
+        passage_titles = []
+        passage_texts = []
+        passage_mask = []
 
         for example in examples:
-            questions.append(example["question"])
+            questions.extend([example["question"]] * max_passages)
 
-            passages = example["passages"][: self.hparams.predict_max_passages]
-            passage_titles.append([passage["title"] for passage in passages])
-            passage_texts.append([passage["text"] for passage in passages])
+            passages = example["positive_passages"] + example["negative_passages"]
+            passages = sorted(passages, key=lambda x: x["score"], reverse=True)[:max_passages]
 
-        tokenized_inputs, passage_mask, span_mask = self.reader_module.tokenizer(
-            questions, passage_titles, passage_texts
+            num_passages = len(passages)
+            passage_titles.extend([self.all_passages[passage["idx"]]["title"] for passage in passages])
+            passage_texts.extend([self.all_passages[passage["idx"]]["text"] for passage in passages])
+            passage_mask.extend([1] * num_passages)
+
+            num_dummy_passages = max_passages - num_passages
+            passage_titles.extend([""] * num_dummy_passages)
+            passage_texts.extend([""] * num_dummy_passages)
+            passage_mask.extend([0] * num_dummy_passages)
+
+        tokenized_inputs, span_mask = self.reader_module.tokenizer(questions, passage_titles, passage_texts)
+        tokenized_inputs = BatchEncoding(
+            {k: v.view(num_questions, max_passages, -1) for k, v in tokenized_inputs.items()}
         )
+        span_mask = span_mask.view(num_questions, max_passages, -1)
+        passage_mask = torch.tensor(passage_mask).view(num_questions, max_passages).bool()
+
         return tokenized_inputs, passage_mask, span_mask
 
     def predict_step(
         self, batch: tuple[BatchEncoding, Tensor, Tensor], batch_idx: int
     ) -> list[dict[str, str | float]]:
         tokenized_inputs, passage_mask, span_mask = batch
-        predictions = self.predict_answers_from_tokenized_inputs(tokenized_inputs, passage_mask, span_mask)
+        predictions = self.predict_answers_tokenized(tokenized_inputs, passage_mask, span_mask)
         return predictions
 
-    def predict_answers(
-        self, questions: list[str], passage_titles: list[list[str]], passage_texts: list[list[str]]
-    ) -> list[dict[str, str | float]]:
-        tokenized_inputs, passage_mask, span_mask = self.reader_module.tokenizer(
-            questions, passage_titles, passage_texts
-        )
+    def predict_answer(
+        self,
+        question: str,
+        passage_titles: list[str],
+        passage_texts: list[str],
+    ) -> dict[str, str | float]:
+        num_passages = len(passage_titles)
+        if len(passage_texts) != num_passages:
+            raise ValueError(
+                f"len(passage_titles) != len(passage_texts) ({len(passage_titles)} != {len(passage_texts)}"
+            )
+
+        questions = [question] * num_passages
+
+        tokenized_inputs, span_mask = self.reader_module.tokenizer(questions, passage_titles, passage_texts)
+        tokenized_inputs = BatchEncoding({k: v.view(1, num_passages, -1) for k, v in tokenized_inputs.items()})
+        span_mask = span_mask.view(1, num_passages, -1)
+        passage_mask = torch.ones(1, num_passages).bool()
+
         tokenized_inputs = tokenized_inputs.to(self.device)
-        passage_mask = passage_mask.to(self.device)
         span_mask = span_mask.to(self.device)
+        passage_mask = passage_mask.to(self.device)
 
-        predictions = self.predict_answers_from_tokenized_inputs(tokenized_inputs, passage_mask, span_mask)
-        return predictions
+        predictions = self.predict_answers_tokenized(tokenized_inputs, passage_mask, span_mask)
+        assert len(predictions) == 1
+        return predictions[0]
 
-    def predict_answers_from_tokenized_inputs(
-        self, tokenized_inputs: BatchEncoding, passage_mask: Tensor, span_mask: Tensor
+    def predict_answers_tokenized(
+        self,
+        tokenized_inputs: BatchEncoding,
+        passage_mask: Tensor,
+        span_mask: Tensor,
     ) -> list[dict[str, str | float]]:
-        assert not self.reader_module.training
+        assert not self.reader_module.reader.training
 
         input_ids = tokenized_inputs["input_ids"]
-        num_questions, _, _ = input_ids.size()
+        num_questions, max_passages, _ = input_ids.size()
 
-        classifier_logits, start_logits, end_logits = self.reader_module.reader(tokenized_inputs)
+        classifier_logits, start_logits, end_logits = self.reader_module.reader(
+            BatchEncoding({k: v.view(num_questions * max_passages, -1) for k, v in tokenized_inputs.items()})
+        )
+        classifier_logits = classifier_logits.view(num_questions, max_passages)
+        start_logits = start_logits.view(num_questions, max_passages, -1)
+        end_logits = end_logits.view(num_questions, max_passages, -1)
 
         classifier_log_probs = F.log_softmax(classifier_logits.masked_fill(~passage_mask, -1e4), dim=1)
         pred_classifier_log_probs, selected_input_idxs = classifier_log_probs.max(dim=1)
 
-        selected_input_ids = input_ids.take_along_dim(selected_input_idxs[:, None, None], dim=1)[:, 0, :]
-        selected_span_mask = span_mask.take_along_dim(selected_input_idxs[:, None, None], dim=1)[:, 0, :]
-        selected_start_logits = start_logits.take_along_dim(selected_input_idxs[:, None, None], dim=1)[:, 0, :]
-        selected_end_logits = end_logits.take_along_dim(selected_input_idxs[:, None, None], dim=1)[:, 0, :]
+        selected_input_ids = input_ids.take_along_dim(selected_input_idxs[:, None, None], dim=1).squeeze(1)
+        selected_span_mask = span_mask.take_along_dim(selected_input_idxs[:, None, None], dim=1).squeeze(1)
+        selected_start_logits = start_logits.take_along_dim(selected_input_idxs[:, None, None], dim=1).squeeze(1)
+        selected_end_logits = end_logits.take_along_dim(selected_input_idxs[:, None, None], dim=1).squeeze(1)
 
         pred_answer_starts, pred_answer_ends, pred_span_log_probs = self.reader_module.get_pred_answer_spans(
             selected_start_logits, selected_end_logits, selected_span_mask
         )
 
-        predictions: list[dict[str, str | float]] = []
-
+        predictions = []
         for i in range(num_questions):
             start = pred_answer_starts[i]
             end = pred_answer_ends[i]

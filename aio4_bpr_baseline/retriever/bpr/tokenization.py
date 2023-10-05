@@ -1,9 +1,9 @@
-from transformers import AutoTokenizer, BatchEncoding, PreTrainedTokenizer
+from transformers import AutoTokenizer, BatchEncoding
 
 
-class QuestionEncoderTokenizer:
+class BPRQuestionTokenizer:
     def __init__(self, base_model_name: str, max_question_length: int = 256):
-        self.tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(base_model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(base_model_name)
         self.max_question_length = max_question_length
 
     def __call__(self, questions: list[str], return_tensors: str = "pt") -> BatchEncoding:
@@ -17,9 +17,9 @@ class QuestionEncoderTokenizer:
         return tokenized_questions
 
 
-class PassageEncoderTokenizer:
+class BPRPassageTokenizer:
     def __init__(self, base_model_name: str, max_passage_length: int = 256):
-        self.tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(base_model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(base_model_name)
         self.max_passage_length = max_passage_length
 
     def __call__(

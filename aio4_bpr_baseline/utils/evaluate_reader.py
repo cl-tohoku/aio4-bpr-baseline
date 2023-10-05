@@ -5,9 +5,10 @@ import string
 import unicodedata
 from typing import Any
 
+from datasets import Dataset
 from tqdm import tqdm
 
-from aio4_bpr_baseline.utils.data import open_file
+from aio4_bpr_baseline.utils.data import PASSAGES_FEATURES, open_file
 
 
 def normalize_answer(answer_text: str, mode: str = "default") -> str:
@@ -24,9 +25,9 @@ def normalize_answer(answer_text: str, mode: str = "default") -> str:
     return answer_text
 
 
-def load_input_file(input_file: str) -> list[str, Any]:
+def load_dataset_file(dataset_file: str) -> list[str, Any]:
     examples = []
-    with open_file(input_file, "rt") as f:
+    with open_file(dataset_file, "rt") as f:
         for line in tqdm(f):
             example = json.loads(line)
             examples.append(example)
@@ -42,6 +43,10 @@ def load_prediction_file(prediction_file: str) -> list[str, Any]:
             prediction_items.append(prediction_item)
 
     return prediction_items
+
+
+def load_passages(passages_file: str) -> Dataset:
+    return Dataset.from_json(passages_file, features=PASSAGES_FEATURES)
 
 
 def compute_metrics(
@@ -68,12 +73,13 @@ def compute_metrics(
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input_file", type=str, required=True)
+    parser.add_argument("--dataset_file", type=str, required=True)
+    parser.add_argument("--passages_file", type=str, required=True)
     parser.add_argument("--prediction_file", type=str, required=True)
     parser.add_argument("--answer_normalization_mode", choices=("default", "nfkc"), default="default")
     args = parser.parse_args()
 
-    examples = load_input_file(args.input_file)
+    examples = load_dataset_file(args.dataset_file)
     prediction_items = load_prediction_file(args.prediction_file)
 
     num_examples = len(examples)
@@ -81,7 +87,7 @@ def main():
 
     if num_examples != num_prediction_items:
         raise ValueError(
-            "The number of items in input_file and prediction_file are not the same.",
+            "The number of items in dataset_file and prediction_file are not the same.",
             f"({num_examples}) != ({num_prediction_items})",
         )
 

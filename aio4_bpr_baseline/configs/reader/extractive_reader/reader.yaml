@@ -1,11 +1,11 @@
 model:
-  class_path: aio4_bpr_baseline.models.reader.extractive_reader.lightning_modules.ReaderLightningModule
+  class_path: aio4_bpr_baseline.reader.extractive_reader.lightning_modules.ExtractiveReaderLightningModule
   init_args:
     base_model_name: cl-tohoku/bert-base-japanese-v3
 trainer:
   devices: 4
   precision: 16-mixed
-  max_epochs: 20
+  max_epochs: 10
   accumulate_grad_batches: 4
   gradient_clip_val: 2.0
   callbacks:

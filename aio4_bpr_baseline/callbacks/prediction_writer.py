@@ -1,5 +1,5 @@
-import json
 import gzip
+import json
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +16,7 @@ class JsonPredictionWriter(BasePredictionWriter):
         self,
         trainer: Trainer,
         pl_module: LightningModule,
-        prediction: list[dict[str, Any]],
+        prediction: list[Any],
         batch_indices: list[int],
         batch: Any,
         batch_idx: int,
@@ -26,10 +26,9 @@ class JsonPredictionWriter(BasePredictionWriter):
         predictions_dir.mkdir(exist_ok=True)
         prediction_file = predictions_dir / f"rank={trainer.global_rank}-batch={batch_idx}.jsonl.gz"
 
+        assert len(prediction) == len(batch_indices)
         with gzip.open(prediction_file, "wt") as fo:
-            for _idx, prediction_item in zip(batch_indices, prediction):
-                prediction_item["_idx"] = _idx
-                print(json.dumps(prediction_item, ensure_ascii=False), file=fo)
+            json.dump({"idxs": batch_indices, "prediction": prediction}, fo, ensure_ascii=False)
 
 
 class NumpyPredictionWriter(BasePredictionWriter):
@@ -50,4 +49,5 @@ class NumpyPredictionWriter(BasePredictionWriter):
         predictions_dir.mkdir(exist_ok=True)
         prediction_file = predictions_dir / f"rank={trainer.global_rank}-batch={batch_idx}.npz"
 
-        np.savez(prediction_file, _idx=np.array(batch_indices), prediction=prediction)
+        assert prediction.shape[0] == len(batch_indices)
+        np.savez(prediction_file, idxs=np.array(batch_indices), prediction=prediction)

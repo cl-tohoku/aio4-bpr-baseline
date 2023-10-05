@@ -1,6 +1,6 @@
 import argparse
-import json
 import gzip
+import json
 from pathlib import Path
 from typing import Any
 
@@ -9,18 +9,25 @@ from tqdm import tqdm
 from aio4_bpr_baseline.utils.data import open_file
 
 
-def load_prediction(predictions_dir: str) -> list[dict[str, Any]]:
-    prediction_items = []
+def load_prediction(predictions_dir: str) -> list[Any]:
+    idxs = []
+    prediction = []
+
     for prediction_file in tqdm(Path(predictions_dir).iterdir()):
-        prediction_items += [json.loads(line) for line in gzip.open(prediction_file, "rt")]
+        with gzip.open(prediction_file, "rt") as f:
+            dumped_dict = json.load(f)
+            idxs.extend(dumped_dict["idxs"])
+            prediction.extend(dumped_dict["prediction"])
 
-    prediction_items = sorted(prediction_items, key=lambda x: x.pop("_idx"))
-    return prediction_items
+    assert len(idxs) == len(prediction)
+
+    prediction = [prediction_item for idx, prediction_item in sorted(zip(idxs, prediction), key=lambda x: x[0])]
+    return prediction
 
 
-def write_prediction(prediction_items: list[dict[str, Any]], output_file: str):
+def write_prediction(prediction: list[Any], output_file: str):
     with open_file(output_file, "wt") as fo:
-        for prediction_item in tqdm(prediction_items):
+        for prediction_item in tqdm(prediction):
             print(json.dumps(prediction_item, ensure_ascii=False), file=fo)
 
 
@@ -30,8 +37,8 @@ def main():
     parser.add_argument("--output_file", type=str, required=True)
     args = parser.parse_args()
 
-    prediction_items = load_prediction(args.predictions_dir)
-    write_prediction(prediction_items, args.output_file)
+    prediction = load_prediction(args.predictions_dir)
+    write_prediction(prediction, args.output_file)
 
 
 if __name__ == "__main__":

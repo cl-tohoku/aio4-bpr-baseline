@@ -2,14 +2,10 @@ import argparse
 import json
 import re
 import unicodedata
-import pandas as pd
-import time
+from typing import Dict, List, Tuple, Union
 
 
 def normalize_answer(text: str) -> str:
-    if text is None or isinstance(text, float):
-        return None
-
     # substitute some symbols that will not be replaced by unicode normalization
     text = text.replace("～", "〜")
 
@@ -34,9 +30,9 @@ def normalize_answer(text: str) -> str:
     return text
 
 
-def get_all_gold_answers(gold_file: str) -> (dict[str, str], dict[str, str]):
-    all_questions: dict[str, str] = {}  # qid -> question
-    all_gold_answers: dict[str, list[str]] = {}  # qid -> answers
+def get_all_gold_answers(gold_file: str) -> Tuple[Dict[str, str], Dict[str, str]]:
+    all_questions: Dict[str, str] = {}  # qid -> question
+    all_gold_answers: Dict[str, List[str]] = {}  # qid -> answers
     with open(gold_file) as f:
         for line in f:
             gold_item = json.loads(line)
@@ -51,23 +47,35 @@ def get_all_gold_answers(gold_file: str) -> (dict[str, str], dict[str, str]):
     return all_gold_answers, all_questions
 
 
-def get_all_pred_answers(*, prediction_file: str = None, df: pd.DataFrame = None) -> dict[str, dict[int, str]]:
-    if prediction_file is not None and df is not None:
-        raise ValueError("Only one of prediction_file or df should be specified.")
-    if prediction_file is None and df is None:
-        raise ValueError("Either prediction_file or df should be specified.")
-    if prediction_file:
-        df = pd.read_json(prediction_file, lines=True)
-    # df['prediction'] = df['prediction'].astype(str)
-    all_pred_answers: dict[str, dict[int, str]] = {}  # qid -> position -> answer
-    df["prediction"] = df["prediction"].apply(normalize_answer)
-    all_pred_answers = df.groupby("qid").apply(lambda x: x.set_index("position").to_dict()["prediction"]).to_dict()
+def get_all_pred_answers(prediction_file: str) -> Dict[str, Dict[int, str]]:
+    all_pred_answers: Dict[str, Dict[int, str]] = {}  # qid -> position -> answer
+    with open(prediction_file) as f:
+        for line in f:
+            try:
+                pred_item = json.loads(line)
+                qid = pred_item["qid"]
+                position = pred_item["position"]
+                pred_answer = pred_item["prediction"]
+
+                if pred_answer is not None:
+                    pred_answer = normalize_answer(pred_answer)
+
+                if qid not in all_pred_answers:
+                    all_pred_answers[qid]: Dict[int, str] = {}
+
+                all_pred_answers[qid][position] = pred_answer
+            except Exception as e:
+                print(e)
+
     return all_pred_answers
 
 
 def compute_scores(
-    all_gold_answers, all_questions, all_pred_answers, limit_num_wrong_answers: int = None
-) -> dict[str, float]:
+    all_gold_answers: Dict[str, str],
+    all_questions: Dict[str, str],
+    all_pred_answers: Dict[str, Dict[int, str]],
+    limit_num_wrong_answers: int = None,
+) -> Dict[str, Union[int, float]]:
     num_questions = len(all_questions)
 
     # calculate scores
@@ -77,10 +85,10 @@ def compute_scores(
     num_missed = 0
     num_failed = 0
     for qid, question in all_questions.items():
-        pred_answers = all_pred_answers[qid]  # position -> pred_answer
+        pred_answers = all_pred_answers.get(qid, {})  # position -> pred_answer
         gold_answers = all_gold_answers[qid]
 
-        correct_position: int | None = None  # the earliest position of the correct predictions
+        correct_position: Union[int, None] = None  # the earliest position of the correct predictions
         wrong_answers = set()
 
         for position, pred_answer in sorted(pred_answers.items(), key=lambda x: x[0]):
@@ -118,39 +126,21 @@ def compute_scores(
     return scores
 
 
-def main(
-    gold_file: str,
-    prediction_file: str,
-    limit_num_wrong_answers: int = None,
-) -> dict[str, float]:
-    # load the gold file
-    all_gold_answers, all_questions = get_all_gold_answers(gold_file)
-    num_questions = len(all_questions)
-
-    # load the prediction file
-    all_pred_answers = get_all_pred_answers(prediction_file=prediction_file)
-    assert len(all_pred_answers) == num_questions
-
-    scores = compute_scores(
-        all_gold_answers,
-        all_questions,
-        all_pred_answers,
-        limit_num_wrong_answers=limit_num_wrong_answers,
-    )
-    return scores
-
-
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--prediction_file", type=str, required=True)
     parser.add_argument("--gold_file", type=str, required=True)
     parser.add_argument("--limit_num_wrong_answers", type=int)
     args = parser.parse_args()
 
-    # start = time.time()
-    scores = main(args.gold_file, args.prediction_file, limit_num_wrong_answers=args.limit_num_wrong_answers)
-    # end = time.time()
-    # print(end - start)
+    all_gold_answers, all_questions = get_all_gold_answers(args.gold_file)
+    all_pred_answers = get_all_pred_answers(args.prediction_file)
+    scores = compute_scores(
+        all_gold_answers,
+        all_questions,
+        all_pred_answers,
+        limit_num_wrong_answers=args.limit_num_wrong_answers,
+    )
 
     print("num_questions: {}".format(scores["num_questions"]))
     print("num_correct: {}".format(scores["num_correct"]))
@@ -160,3 +150,7 @@ if __name__ == "__main__":
     print("accuracy_score: {:.3f}".format(scores["accuracy_score"]))
     print("position_score: {:.3f}".format(scores["position_score"]))
     print("total_score: {:.3f}".format(scores["total_score"]))
+
+
+if __name__ == "__main__":
+    main()

@@ -8,7 +8,7 @@ import regex
 from datasets import Dataset
 from tqdm import tqdm
 
-from aio4_bpr_baseline.utils.data import PASSAGE_DATASET_FEATURES, open_file
+from aio4_bpr_baseline.utils.data import PASSAGES_FEATURES, open_file
 
 
 SIMPLE_TOKENIZER_REGEXP = regex.compile(
@@ -17,7 +17,7 @@ SIMPLE_TOKENIZER_REGEXP = regex.compile(
 
 
 def simple_tokenize(text: str) -> list[str]:
-    tokens = [match.group() for match in SIMPLE_TOKENIZER_REGEXP.finditer(text)]
+    tokens = [match.group().lower() for match in SIMPLE_TOKENIZER_REGEXP.finditer(text)]
     return tokens
 
 
@@ -39,7 +39,7 @@ def has_answer(passage_text: str, answers: list[str], answer_match_type: str = "
             try:
                 answer_regexp = re.compile(answer_text, flags=re.IGNORECASE + re.UNICODE + re.MULTILINE)
             except BaseException:
-                return False
+                continue
             if answer_regexp.search(passage_text) is not None:
                 return True
 
@@ -55,9 +55,9 @@ def has_answer(passage_text: str, answers: list[str], answer_match_type: str = "
     return False
 
 
-def load_input_file(input_file: str) -> list[str, Any]:
+def load_dataset_file(dataset_file: str) -> list[str, Any]:
     examples = []
-    with open_file(input_file, "rt") as f:
+    with open_file(dataset_file, "rt") as f:
         for line in tqdm(f):
             example = json.loads(line)
             examples.append(example)
@@ -66,47 +66,46 @@ def load_input_file(input_file: str) -> list[str, Any]:
 
 
 def load_prediction_file(prediction_file: str) -> list[str, Any]:
-    prediction_items = []
+    prediction = []
     with open_file(prediction_file, "rt") as f:
         for line in tqdm(f):
             prediction_item = json.loads(line)
-            prediction_items.append(prediction_item)
+            prediction.append(prediction_item)
 
-    return prediction_items
+    return prediction
 
 
-def load_passage_dataset(passage_dataset_file: str, datasets_num_proc: int | None = None) -> Dataset:
-    passage_dataset = Dataset.from_json(
-        passage_dataset_file, features=PASSAGE_DATASET_FEATURES, num_proc=datasets_num_proc
-    )
-    return passage_dataset
+def load_passages(passages_file: str) -> Dataset:
+    return Dataset.from_json(passages_file, features=PASSAGES_FEATURES)
 
 
 def update_example_with_prediction(
-    example: dict[str, Any], prediction_item: dict[str, Any], passage_dataset: Dataset, answer_match_type: str
+    example: dict[str, Any],
+    prediction_item: list[dict[str, int | float]],
+    all_passages: Dataset,
+    answer_match_type: str,
 ) -> dict[str, Any]:
     answers = example["answers"]
-    passage_ids = prediction_item["passage_ids"]
-    scores = prediction_item["scores"]
 
-    passages = []
-    positive_passage_idxs = []
-    negative_passage_idxs = []
+    positive_passages = []
+    negative_passages = []
+    for passage_info in prediction_item:
+        idx = passage_info["idx"]
+        score = passage_info["score"]
 
-    for i, (passage_id, score) in enumerate(zip(passage_ids, scores)):
-        passage = passage_dataset[passage_id]
-        passage["score"] = score
+        passage = all_passages[idx]
+        assert idx == passage["idx"]
+        pid = passage["pid"]
+        text = passage["text"]
 
-        passages.append(passage)
-        if has_answer(passage["text"], answers, answer_match_type=answer_match_type):
-            positive_passage_idxs.append(i)
+        if has_answer(text, answers, answer_match_type=answer_match_type):
+            positive_passages.append({"idx": idx, "pid": pid, "title": None, "text": None, "score": score})
         else:
-            negative_passage_idxs.append(i)
+            negative_passages.append({"idx": idx, "pid": pid, "title": None, "text": None, "score": score})
 
     updated_example = dict(**example)
-    updated_example["passages"] = passages
-    updated_example["positive_passage_idxs"] = positive_passage_idxs
-    updated_example["negative_passage_idxs"] = negative_passage_idxs
+    updated_example["positive_passages"] = positive_passages
+    updated_example["negative_passages"] = negative_passages
 
     return updated_example
 
@@ -114,9 +113,11 @@ def update_example_with_prediction(
 def compute_metrics(examples: list[dict[str, Any]], recall_ks: list[int], mrr_ks: list[int]) -> dict[str, float]:
     ranks = []
     for example in examples:
-        positive_passage_idxs = example["positive_passage_idxs"]
-        if len(positive_passage_idxs) > 0:
-            rank = min(positive_passage_idxs) + 1
+        positive_passages = example["positive_passages"]
+        negative_passages = example["negative_passages"]
+        if len(positive_passages) > 0:
+            top_positive_score = positive_passages[0]["score"]
+            rank = sum(1 for passage_info in negative_passages if passage_info["score"] > top_positive_score) + 1
         else:
             rank = None
 
@@ -142,33 +143,32 @@ def write_dataset(examples: list[dict[str, Any]], output_file: str):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input_file", type=str, required=True)
+    parser.add_argument("--dataset_file", type=str, required=True)
+    parser.add_argument("--passages_file", type=str, required=True)
     parser.add_argument("--prediction_file", type=str, required=True)
-    parser.add_argument("--passage_dataset_file", type=str, required=True)
     parser.add_argument("--output_file", type=str)
     parser.add_argument("--answer_match_type", choices=("string", "regex", "nfkc"), default="string")
     parser.add_argument("--recall_k", type=int, nargs="+", default=[1, 2, 5, 10, 20, 50, 100])
     parser.add_argument("--mrr_k", type=int, nargs="+", default=[10])
-    parser.add_argument("--datasets_num_proc", type=int)
     args = parser.parse_args()
 
-    examples = load_input_file(args.input_file)
-    prediction_items = load_prediction_file(args.prediction_file)
+    examples = load_dataset_file(args.dataset_file)
+    prediction = load_prediction_file(args.prediction_file)
 
     num_examples = len(examples)
-    num_prediction_items = len(prediction_items)
+    num_prediction = len(prediction)
 
-    if num_examples != num_prediction_items:
+    if num_examples != num_prediction:
         raise ValueError(
-            "The number of items in input_file and prediction_file are not the same.",
-            f"({num_examples}) != ({num_prediction_items})",
+            "The number of items in dataset_file and prediction_file are not the same.",
+            f"({num_examples}) != ({num_prediction})",
         )
 
-    passage_dataset = load_passage_dataset(args.passage_dataset_file, args.datasets_num_proc)
+    all_passages = load_passages(args.passages_file)
 
     updated_examples = [
-        update_example_with_prediction(example, prediction_item, passage_dataset, args.answer_match_type)
-        for example, prediction_item in tqdm(zip(examples, prediction_items), total=num_examples)
+        update_example_with_prediction(example, prediction_item, all_passages, args.answer_match_type)
+        for example, prediction_item in tqdm(zip(examples, prediction), total=num_examples)
     ]
 
     metrics = compute_metrics(updated_examples, args.recall_k, args.mrr_k)

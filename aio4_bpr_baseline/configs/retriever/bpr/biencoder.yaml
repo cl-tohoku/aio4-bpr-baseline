@@ -1,5 +1,5 @@
 model:
-  class_path: aio4_bpr_baseline.models.retriever.bpr.lightning_modules.BiEncoderLightningModule
+  class_path: aio4_bpr_baseline.retriever.bpr.lightning_modules.BPRBiencoderLightningModule
   init_args:
     base_model_name: cl-tohoku/bert-base-japanese-v3
 trainer:

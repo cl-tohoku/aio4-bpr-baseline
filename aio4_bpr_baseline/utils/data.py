@@ -8,21 +8,30 @@ DATASET_FEATURES = Features(
         "qid": Value(dtype="string"),
         "question": Value(dtype="string"),
         "answers": [Value(dtype="string")],
-        "passages": [
+        "positive_passages": [
             {
+                "idx": Value(dtype="int64"),
                 "pid": Value(dtype="string"),
                 "title": Value(dtype="string"),
                 "text": Value(dtype="string"),
                 "score": Value(dtype="float32"),
             }
         ],
-        "positive_passage_idxs": [Value(dtype="int64")],
-        "negative_passage_idxs": [Value(dtype="int64")],
+        "negative_passages": [
+            {
+                "idx": Value(dtype="int64"),
+                "pid": Value(dtype="string"),
+                "title": Value(dtype="string"),
+                "text": Value(dtype="string"),
+                "score": Value(dtype="float32"),
+            }
+        ],
     }
 )
 
-PASSAGE_DATASET_FEATURES = Features(
+PASSAGES_FEATURES = Features(
     {
+        "idx": Value(dtype="int64"),
         "pid": Value(dtype="string"),
         "title": Value(dtype="string"),
         "text": Value(dtype="string"),

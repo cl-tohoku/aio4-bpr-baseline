@@ -1,5 +1,5 @@
 model:
-  class_path: aio4_bpr_baseline.models.reader.extractive_reader.lightning_modules.ReaderPredictionLightningModule
+  class_path: aio4_bpr_baseline.pipeline_aio4.bpr_extractive_reader.lightning_modules.BPRExtractiveReaderPipelineLightningModule
 trainer:
   devices: 4
   precision: 16-mixed

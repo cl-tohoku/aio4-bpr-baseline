@@ -1,5 +1,5 @@
 model:
-  class_path: aio4_bpr_baseline.models.retriever.bpr.lightning_modules.RetrieverLightningModule
+  class_path: aio4_bpr_baseline.retriever.bpr.lightning_modules.BPRRetrieverLightningModule
 trainer:
   devices: 4
   precision: 16-mixed
