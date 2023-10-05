@@ -215,6 +215,7 @@ python -m aio4_bpr_baseline.lightning_cli predict \
   --model.reader_ckpt_file work/aio_02/reader/lightning_logs/version_0/checkpoints/last.ckpt \
   --model.passage_embeddings_file work/aio_02/embedder/lightning_logs/version_0/prediction.npy \
   --model.passages_file work/aio_02/data/passages.jsonl.gz \
+  --model.predict_batch_size 1 \
   --model.predict_dataset_file data/aio_04_test_lb_unlabeled_v1.0.jsonl \
   --model.predict_num_passages 10 \
   --model.predict_answer_score_threshold 0.5 \
