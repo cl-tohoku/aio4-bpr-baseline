@@ -225,6 +225,28 @@ python -m aio4_bpr_baseline.utils.gather_json_predictions \
   --output_file work/aio_02/pipeline_aio4/aio_04_test_lb/lightning_logs/version_0/prediction.jsonl
 ```
 
+### Prepare for Docker submission
+
+**1. Build and run a Docker image**
+
+```sh
+cp work/aio_02/biencoder/lightning_logs/version_0/checkpoints/last.ckpt work/biencoder.ckpt
+cp work/aio_02/reader/lightning_logs/version_0/checkpoints/last.ckpt work/reader.ckpt
+cp work/aio_02/embedder/lightning_logs/version_0/prediction.npy work/passage_embeddings.npy
+cp work/aio_02/data/passages.jsonl.gz work/passages.json.gz
+
+docker build -t aio4-bpr-baseline .
+docker run --gpus 1 --rm -p 8000:8000 aio4-bpr-baseline
+```
+
+**2. Predict answers for the questions in AIO4 leaderboard test data**
+
+```sh
+python3 -m evaluate_docker_api \
+  --test_unlabelded_file data/aio_04_test_lb_unlabeled_v1.0.jsonl \
+  --output_prediction_file work/aio_04_test_lb_prediction_v1.0.jsonl
+```
+
 ## License
 
 <a rel="license" href="http://creativecommons.org/licenses/by-nc/4.0/"><img alt="Creative Commons License" style="border-width:0" src="https://i.creativecommons.org/l/by-nc/4.0/88x31.png" /></a><br />This
