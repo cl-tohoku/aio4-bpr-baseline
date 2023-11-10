@@ -80,4 +80,4 @@ app = FastAPI()
 @app.get("/answer")
 def answer(qid: str, position: int, question: str):
     prediction = pipeline.predict_answer(question)
-    return {"qid": qid, "position": position, "prediction": prediction["pred_answer"]}
+    return {"prediction": prediction["pred_answer"]}

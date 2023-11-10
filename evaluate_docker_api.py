@@ -31,12 +31,6 @@ def main():
                 with urllib.request.urlopen(req) as res:
                     output_item = json.load(res)
 
-                if output_item.get("qid") != qid:
-                    raise ValueError("Invalid qid")
-
-                if output_item.get("position") != position:
-                    raise ValueError("Invalid position")
-
                 pred_answer = output_item.get("prediction")
                 if pred_answer is not None and not isinstance(pred_answer, str):
                     raise ValueError("Invalid prediction")
