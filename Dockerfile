@@ -8,7 +8,6 @@ COPY work/passages.json.gz /work/passages.json.gz
 
 # Copy codes
 COPY aio4_bpr_baseline /code/aio4_bpr_baseline
-# COPY prediction_loop.py /code/prediction_loop.py
 COPY prediction_api.py /code/prediction_api.py
 COPY pyproject.toml /code/pyproject.toml
 COPY setup.cfg /code/setup.cfg
@@ -26,5 +25,4 @@ ENV TRANSFORMERS_OFFLINE=1
 
 # Start the prediction loop
 WORKDIR /code
-# ENTRYPOINT ["python", "-m", "prediction_loop"]
 CMD ["uvicorn", "prediction_api:app", "--host", "0.0.0.0", "--port", "8000"]
