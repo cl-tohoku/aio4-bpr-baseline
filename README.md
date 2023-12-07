@@ -171,15 +171,31 @@ python -m aio4_bpr_baseline.utils.evaluate_reader \
 
 ### Running Pipeline of Retriever and Reader
 
-**1. Predict answers for the questions in AIO4 development data**
+**1. Prepare the checkpoints of the pretrained models**
+
+```sh
+# Copy the models you have trained above
+cp work/aio_02/biencoder/lightning_logs/version_0/checkpoints/last.ckpt work/biencoder.ckpt
+cp work/aio_02/reader/lightning_logs/version_0/checkpoints/last.ckpt work/reader.ckpt
+cp work/aio_02/embedder/lightning_logs/version_0/prediction.npy work/passage_embeddings.npy
+cp work/aio_02/data/passages.jsonl.gz work/passages.json.gz
+
+# Or download ones publicly available
+wget https://storage.googleapis.com/aio-public-tokyo/aio4_bpr_baseline_models/biencoder.ckpt -P work
+wget https://storage.googleapis.com/aio-public-tokyo/aio4_bpr_baseline_models/reader.ckpt -P work
+wget https://storage.googleapis.com/aio-public-tokyo/aio4_bpr_baseline_models/passage_embeddings.npy -P work
+wget https://storage.googleapis.com/aio-public-tokyo/aio4_bpr_baseline_models/passages.json.gz -P work
+```
+
+**2. Predict answers for the questions in AIO4 development data**
 
 ```sh
 python -m aio4_bpr_baseline.lightning_cli predict \
   --config aio4_bpr_baseline/configs/pipeline_aio4/bpr_extractive_reader/pipeline.yaml \
-  --model.biencoder_ckpt_file work/aio_02/biencoder/lightning_logs/version_0/checkpoints/last.ckpt \
-  --model.reader_ckpt_file work/aio_02/reader/lightning_logs/version_0/checkpoints/last.ckpt \
-  --model.passage_embeddings_file work/aio_02/embedder/lightning_logs/version_0/prediction.npy \
-  --model.passages_file work/aio_02/data/passages.jsonl.gz \
+  --model.biencoder_ckpt_file work/biencoder.ckpt \
+  --model.reader_ckpt_file work/reader.ckpt \
+  --model.passage_embeddings_file work/passage_embeddings.npy \
+  --model.passages_file work/passages.json.gz \
   --model.predict_dataset_file data/aio_04_dev_unlabeled_v1.0.jsonl \
   --model.predict_num_passages 10 \
   --model.predict_answer_score_threshold 0.5 \
@@ -189,7 +205,7 @@ python -m aio4_bpr_baseline.utils.gather_json_predictions \
   --output_file work/aio_02/pipeline_aio4/aio_04_dev/lightning_logs/version_0/prediction.jsonl
 ```
 
-**2. Compute the scores**
+**3. Compute the scores**
 
 ```sh
 python -m compute_score \
@@ -206,15 +222,15 @@ python -m compute_score \
 # total_score: 364.380
 ```
 
-**3. Predict answers for the questions in AIO4 leaderboard test data**
+**4. Predict answers for the questions in AIO4 leaderboard test data**
 
 ```sh
 python -m aio4_bpr_baseline.lightning_cli predict \
   --config aio4_bpr_baseline/configs/pipeline_aio4/bpr_extractive_reader/pipeline.yaml \
-  --model.biencoder_ckpt_file work/aio_02/biencoder/lightning_logs/version_0/checkpoints/last.ckpt \
-  --model.reader_ckpt_file work/aio_02/reader/lightning_logs/version_0/checkpoints/last.ckpt \
-  --model.passage_embeddings_file work/aio_02/embedder/lightning_logs/version_0/prediction.npy \
-  --model.passages_file work/aio_02/data/passages.jsonl.gz \
+  --model.biencoder_ckpt_file work/biencoder.ckpt \
+  --model.reader_ckpt_file work/reader.ckpt \
+  --model.passage_embeddings_file work/passage_embeddings.npy \
+  --model.passages_file work/passages.json.gz \
   --model.predict_batch_size 1 \
   --model.predict_dataset_file data/aio_04_test_lb_unlabeled_v1.0.jsonl \
   --model.predict_num_passages 10 \
@@ -229,12 +245,15 @@ python -m aio4_bpr_baseline.utils.gather_json_predictions \
 
 **1. Build and run a Docker image**
 
-```sh
-cp work/aio_02/biencoder/lightning_logs/version_0/checkpoints/last.ckpt work/biencoder.ckpt
-cp work/aio_02/reader/lightning_logs/version_0/checkpoints/last.ckpt work/reader.ckpt
-cp work/aio_02/embedder/lightning_logs/version_0/prediction.npy work/passage_embeddings.npy
-cp work/aio_02/data/passages.jsonl.gz work/passages.json.gz
+Make sure that the following files are placed under `work/` directory.
+If not, follow the first step in the previous section.
 
+- `biencoder.ckpt`
+- `reader.ckpt`
+- `passage_embeddings.npy`
+- `passages.json.gz`
+
+```sh
 docker build -t aio4-bpr-baseline .
 docker run --gpus 1 --rm -p 8000:8000 aio4-bpr-baseline
 ```
