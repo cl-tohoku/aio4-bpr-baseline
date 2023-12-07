@@ -13,6 +13,16 @@ pip install -U pip setuptools
 pip install -e '.[lightning,onnx]'
 ```
 
+## Pretrained model checkpoints
+
+You can download the pretrained model checkpoints and the passage embeddings for experiments.
+See [Running Pipeline of Retriever and Reader](#running-pipeline-of-retriever-and-reader) section for instructions on using them.
+
+- [`biencoder.ckpt`](https://storage.googleapis.com/aio-public-tokyo/aio4_bpr_baseline_models/biencoder.ckpt)
+- [`reader.ckpt`](https://storage.googleapis.com/aio-public-tokyo/aio4_bpr_baseline_models/reader.ckpt)
+- [`passage_embeddings.npy`](https://storage.googleapis.com/aio-public-tokyo/aio4_bpr_baseline_models/passage_embeddings.npy)
+- [`passages.json.gz`](https://storage.googleapis.com/aio-public-tokyo/aio4_bpr_baseline_models/passages.json.gz)
+
 ## Example Usage
 
 **Note:** The following example is run on a server with 4 GPUs, each with 16 GB of memory.
@@ -246,7 +256,7 @@ python -m aio4_bpr_baseline.utils.gather_json_predictions \
 **1. Build and run a Docker image**
 
 Make sure that the following files are placed under `work/` directory.
-If not, follow the first step in the previous section.
+If not, follow the first step in [Running Pipeline of Retriever and Reader](#running-pipeline-of-retriever-and-reader).
 
 - `biencoder.ckpt`
 - `reader.ckpt`
