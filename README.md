@@ -9,8 +9,14 @@ It substantially reduces the memory size without a loss of accuracy when tested 
 ## Installation
 
 ```sh
+# Update pip and setuptools first
 pip install -U pip setuptools
-pip install -e '.[lightning,onnx]'
+
+# Optional: Install the same version of the dependencies we used
+pip install -r requirements.txt
+
+# Install the aio4_bpr_baseline module as well as its dependencies
+pip install -e .
 ```
 
 ## Pretrained model checkpoints

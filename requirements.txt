@@ -1,0 +1,13 @@
+datasets==2.14.5
+faiss-cpu==1.7.4
+fastapi==0.103.2
+jsonargparse[signatures]==4.25.0
+lightning==2.0.9.post0
+numpy==1.26.0
+regex==2023.8.8
+scipy==1.11.3
+tensorboard==2.14.1
+torch==2.0.1
+tqdm==4.66.1
+transformers[ja]==4.33.3
+uvicorn==0.23.2
